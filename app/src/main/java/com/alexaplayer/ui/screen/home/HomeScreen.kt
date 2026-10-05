@@ -320,7 +320,6 @@ private fun greeting(): String {
 private fun pluralSongCount(count: Int): String = pluralStringResource(
     id = R.plurals.plural_song_count,
     count = count,
-    count = count,
 )
 
 private val PLAYLIST_CARD_WIDTH = 140.dp

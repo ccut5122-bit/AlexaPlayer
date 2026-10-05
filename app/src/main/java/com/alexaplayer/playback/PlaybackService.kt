@@ -5,7 +5,8 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
-import androidx.media3.common.MediaItem
+import androidx.concurrent.futures.Futures
+import androidx.media3.common.util.ListenableFuture
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -85,6 +86,7 @@ class PlaybackService : MediaSessionService() {
         mediaSession = MediaSession.Builder(this, player)
             .setSessionActivity(sessionActivityIntent())
             .setCallback(SessionCallback())
+            .setAvailableSessionCommands(availableSessionCommands())
             .setId(SESSION_ID)
             .build()
 
@@ -101,7 +103,6 @@ class PlaybackService : MediaSessionService() {
         player.addListener(playerListener)
 
         observeSettings()
-        observePlaybackForHistory()
     }
 
     private val currentAudioFocusBehaviour: AudioFocusBehaviour
@@ -120,15 +121,13 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
-    private fun observePlaybackForHistory() {
-        serviceScope.launch {
-            player.currentMediaItem.collect { item ->
-                val songId = item?.songId() ?: return@collect
-                container?.libraryRepository?.markPlayed(songId)
-                startPositionUpdates()
-            }
+    private fun availableSessionCommands() = MediaSession.ConnectionResult
+        .DEFAULT_SESSION_COMMANDS.buildUpon()
+        .also { builder ->
+            SessionCommands.all.forEach { builder.add(it) }
+            builder.add(Player.COMMAND_STOP)
         }
-    }
+        .build()
 
     private val playerListener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -149,6 +148,11 @@ class PlaybackService : MediaSessionService() {
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            val songId = mediaItem?.songId()
+            if (songId != null) {
+                serviceScope.launch { container?.libraryRepository?.markPlayed(songId) }
+                startPositionUpdates()
+            }
             if (!gaplessPlayback && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
                 scheduleNonGaplessPause()
             }
@@ -274,28 +278,20 @@ class PlaybackService : MediaSessionService() {
         override fun onConnect(
             session: MediaSession,
             controller: MediaSession.ControllerInfo,
-        ): MediaSession.ConnectionResult {
-            val sessionCommands = MediaSession.ConnectionResult
-                .DEFAULT_SESSION_COMMANDS.buildUpon()
-                .also { builder ->
-                    SessionCommands.all.forEach { builder.add(it) }
-                    builder.add(Player.COMMAND_STOP)
-                }
-                .build()
-
-            session.setSessionCommands(sessionCommands)
-            return MediaSession.ConnectionResult.AcceptedResultBuilder(session).build()
-        }
+        ): MediaSession.ConnectionResult =
+            MediaSession.ConnectionResult.AcceptedResultBuilder(session).build()
 
         override fun onCustomCommand(
             session: MediaSession,
             controller: MediaSession.ControllerInfo,
             customCommand: SessionCommand,
             args: Bundle,
-        ): SessionResult = when (customCommand.customAction) {
-            SessionCommands.TOGGLE_FAVORITE -> handleToggleFavorite(args)
-            else -> SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED)
-        }
+        ): ListenableFuture<SessionResult> = Futures.immediateFuture(
+            when (customCommand.customAction) {
+                SessionCommands.TOGGLE_FAVORITE -> handleToggleFavorite(args)
+                else -> SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED)
+            },
+        )
 
         private fun handleToggleFavorite(args: Bundle): SessionResult {
             val songId = args.getLong(SessionCommands.EXTRA_SONG_ID, -1L)

@@ -1,5 +1,6 @@
 package com.alexaplayer.ui.screen.settings
 
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -216,7 +217,7 @@ private fun ThemeChip(label: String, selected: Boolean, onClick: () -> Unit) {
     }
     Box(
         modifier = Modifier
-            .clip(AlexaRadius.md)
+            .clip(RoundedCornerShape(AlexaRadius.md))
             .background(background)
             .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
             .padding(horizontal = AlexaSpacing.lg, vertical = AlexaSpacing.sm),

@@ -113,6 +113,7 @@ fun DetailScreen(
                     onLongClick = { onMore(song) },
                     trailing = {
                         AlexaIconButton(
+                            iconRes = R.drawable.ic_more_vert,
                             contentDescription = stringResource(R.string.cd_more_options),
                             onClick = { onMore(song) },
                         )

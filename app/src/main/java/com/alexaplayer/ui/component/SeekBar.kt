@@ -119,7 +119,7 @@ fun PlaybackSeekBar(
                 .height(4.dp)
                 .clip(RoundedCornerShape(AlexaRadius.pill))
                 .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                .onSizeChanged { trackWidthPx = it.width },
+                .onSizeChanged { trackWidthPx = it.width.toFloat() },
         ) {
             Box(
                 modifier = Modifier

@@ -29,6 +29,7 @@ import androidx.compose.ui.zIndex
 import com.alexaplayer.R
 import com.alexaplayer.core.designsystem.component.AlexaIconButton
 import com.alexaplayer.core.designsystem.component.EmptyState
+import com.alexaplayer.core.designsystem.component.PrimaryButton
 import com.alexaplayer.core.designsystem.component.QuietButton
 import com.alexaplayer.core.designsystem.component.SecondaryButton
 import com.alexaplayer.core.designsystem.theme.AlexaRadius
@@ -98,6 +99,7 @@ fun PlaylistDetailScreen(
             onBack = onBack,
             actions = {
                 AlexaIconButton(
+                    iconRes = R.drawable.ic_more_vert,
                     contentDescription = stringResource(R.string.cd_more_options),
                     onClick = { showRename = true },
                 )
@@ -115,7 +117,7 @@ fun PlaylistDetailScreen(
                     title = stringResource(R.string.playlist_empty_title),
                     body = stringResource(R.string.playlist_empty_body),
                     action = {
-                        PrimaryPlaylistButton(onClick = onAddSongs, text = stringResource(R.string.playlist_add_songs))
+                        PrimaryButton(onClick = onAddSongs, text = stringResource(R.string.playlist_add_songs))
                     },
                 )
             }
@@ -161,6 +163,7 @@ fun PlaylistDetailScreen(
                     trailing = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             AlexaIconButton(
+                                iconRes = R.drawable.ic_drag_handle,
                                 contentDescription = stringResource(R.string.playlist_reorder_hint),
                                 onClick = {},
                             )
@@ -214,9 +217,4 @@ private fun PlaylistHeader(
             modifier = Modifier.padding(top = AlexaSpacing.md),
         )
     }
-}
-
-@Composable
-private fun PrimaryPlaylistButton(text: String, onClick: () -> Unit) {
-    androidx.compose.material3.Button(onClick = onClick) { Text(text) }
 }

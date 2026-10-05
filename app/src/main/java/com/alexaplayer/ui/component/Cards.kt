@@ -464,7 +464,6 @@ private fun artistSummary(artist: Artist): String {
 fun songCountLabel(count: Int): String = pluralStringResource(
     id = R.plurals.plural_song_count,
     count = count,
-    count = count,
 )
 
 @Composable

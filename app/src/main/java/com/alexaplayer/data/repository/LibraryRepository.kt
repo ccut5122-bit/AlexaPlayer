@@ -77,16 +77,7 @@ class LibraryRepository(
         .flowOn(dispatchers.default)
 
     val folders: Flow<List<LibraryFolder>> = songDao.observeByTitle()
-        .map { rows ->
-            rows.toFolders().map { entity ->
-                val path = entity.folderPath()
-                LibraryFolder(
-                    path = path,
-                    name = path.substringAfterLast('/').ifBlank { path },
-                    songCount = 0,
-                )
-            }
-        }
+        .map { rows -> rows.toFolders() }
         .flowOn(dispatchers.default)
 
     val favorites: Flow<List<Song>> = songDao.observeFavorites()
