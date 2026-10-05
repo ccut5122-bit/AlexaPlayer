@@ -1,5 +1,6 @@
 package com.alexaplayer.data.local.dao
 
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
@@ -20,26 +21,40 @@ data class PlaylistSummaryRow(
 
 data class PlaylistSongRow(
     val playlistId: Long,
+    @ColumnInfo(name = "id")
     val songId: Long,
     val position: Int,
     val title: String,
     val artist: String,
     val album: String,
+    @ColumnInfo(name = "album_id")
     val albumId: Long,
+    @ColumnInfo(name = "artist_id")
     val artistId: Long,
+    @ColumnInfo(name = "duration_ms")
     val durationMs: Long,
+    @ColumnInfo(name = "track_number")
     val trackNumber: Int,
     val year: Int,
     val uri: String,
+    @ColumnInfo(name = "artwork_uri")
     val artworkUri: String?,
+    @ColumnInfo(name = "date_added")
     val dateAdded: Long,
+    @ColumnInfo(name = "date_modified")
     val dateModified: Long,
+    @ColumnInfo(name = "size_bytes")
     val sizeBytes: Long,
+    @ColumnInfo(name = "mime_type")
     val mimeType: String?,
     val source: String,
+    @ColumnInfo(name = "is_favorite")
     val isFavorite: Boolean,
+    @ColumnInfo(name = "last_played_at")
     val lastPlayedAt: Long?,
+    @ColumnInfo(name = "play_count")
     val playCount: Int,
+    @ColumnInfo(name = "resume_position_ms")
     val resumePositionMs: Long,
 )
 
@@ -106,7 +121,7 @@ interface PlaylistDao {
     suspend fun maxPosition(playlistId: Long): Int
 
     @Query("SELECT name FROM playlists WHERE name = :name COLLATE NOCASE LIMIT 1")
-    suspend fun findByName(name: String): PlaylistEntity?
+    suspend fun findByName(name: String): String?
 
     @Query("SELECT * FROM playlists WHERE id = :id")
     suspend fun getById(id: Long): PlaylistEntity?

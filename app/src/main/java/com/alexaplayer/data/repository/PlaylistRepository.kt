@@ -72,7 +72,7 @@ class PlaylistRepository(
         val trimmed = name.trim()
         if (trimmed.isEmpty()) return@withContext Outcome.Failure(FailureReason.NAME_BLANK)
         val clash = playlistDao.findByName(trimmed)
-        if (clash != null && clash.id != id) {
+        if (clash != null && playlistDao.getById(id)?.name != clash) {
             return@withContext Outcome.Failure(FailureReason.NAME_TAKEN)
         }
         runCatching {
