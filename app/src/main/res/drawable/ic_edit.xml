@@ -4,7 +4,7 @@
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24"
-    android:tint="?attr/colorControlNormal">
+    android:tint="@color/icon_tint">
     <path
         android:pathData="M4,19.8 H8.3 L18.6,9.5 A2.3,2.3 0,0 0 15.3,6.2 L5,16.5 Z"
         android:strokeColor="#FFFFFFFF"
