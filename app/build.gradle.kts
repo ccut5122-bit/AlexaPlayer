@@ -166,5 +166,10 @@ configurations.configureEach {
         if (requested.group in COMPOSE_SDK36_GROUPS) {
             useVersion("1.11.4")
         }
+        // Several transitive artifacts ship kotlin-stdlib 2.4.x, which the 2.2.21 compiler
+        // refuses to read. Keep every Kotlin module on the version the plugin runs.
+        if (requested.group == "org.jetbrains.kotlin" && requested.name.startsWith("kotlin-")) {
+            useVersion("2.2.21")
+        }
     }
 }
