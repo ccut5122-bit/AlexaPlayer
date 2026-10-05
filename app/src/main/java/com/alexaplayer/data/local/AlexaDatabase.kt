@@ -43,6 +43,9 @@ abstract class AlexaDatabase : RoomDatabase() {
                     }
                 })
                 .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
+                // A stale or half-written file must not take the app down on launch; the library
+                // is rebuilt from MediaStore anyway, so dropping it is cheaper than crashing.
+                .fallbackToDestructiveMigration()
                 .build()
     }
 }

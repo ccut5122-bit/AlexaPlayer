@@ -281,6 +281,7 @@
     <string name="permission_title">Allow music access</string>
     <string name="permission_body">Alexa Player needs permission to read the audio files stored on this device. Nothing leaves the phone.</string>
     <string name="permission_denied_body">Permission was denied, so the library stays empty. Grant music access from system settings to start listening.</string>
+    <string name="permission_open_settings">Open settings</string>
     <string name="permission_grant">Grant access</string>
     <string name="permission_settings_hint">Settings › Apps › Alexa Player › Permissions › Music and audio</string>
     <string name="playlist_summary">%1$d songs · %2$s</string>

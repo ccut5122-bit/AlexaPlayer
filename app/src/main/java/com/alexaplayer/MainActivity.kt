@@ -30,7 +30,7 @@ class MainActivity : ComponentActivity() {
                 amoled = settings.amoled,
                 dynamicColor = settings.dynamicColor,
             ) {
-                AlexaPlayerRoot()
+                AlexaPlayerRoot(container = container)
             }
         }
     }
