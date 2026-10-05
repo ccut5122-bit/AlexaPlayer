@@ -267,4 +267,20 @@
         <item quantity="other">%1$d songs</item>
     </plurals>
 
+    <string name="action_favourite">Favourite</string>
+    <string name="streams_remove">Remove stream</string>
+    <string name="streams_url_error">Enter a link that starts with http</string>
+    <string name="settings_appearance">Appearance</string>
+    <string name="settings_playback">Playback</string>
+    <string name="settings_about">About</string>
+    <string name="playlist_songs_header">Songs</string>
+    <string name="detail_empty_title">Nothing here yet</string>
+    <string name="detail_albums_header">Albums</string>
+    <string name="settings_about_summary">Alexa Player plays the music stored on this device. Everything stays on the phone: no account, no uploads, no tracking.</string>
+    <string name="action_ok">OK</string>
+    <string name="permission_title">Allow music access</string>
+    <string name="permission_body">Alexa Player needs permission to read the audio files stored on this device. Nothing leaves the phone.</string>
+    <string name="permission_denied_body">Permission was denied, so the library stays empty. Grant music access from system settings to start listening.</string>
+    <string name="permission_grant">Grant access</string>
+    <string name="permission_settings_hint">Settings › Apps › Alexa Player › Permissions › Music and audio</string>
 </resources>
