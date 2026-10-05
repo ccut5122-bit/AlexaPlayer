@@ -5,8 +5,7 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
-import androidx.concurrent.futures.Futures
-import androidx.media3.common.util.ListenableFuture
+import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -86,7 +85,6 @@ class PlaybackService : MediaSessionService() {
         mediaSession = MediaSession.Builder(this, player)
             .setSessionActivity(sessionActivityIntent())
             .setCallback(SessionCallback())
-            .setAvailableSessionCommands(availableSessionCommands())
             .setId(SESSION_ID)
             .build()
 
@@ -121,53 +119,6 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
-    private fun availableSessionCommands() = MediaSession.ConnectionResult
-        .DEFAULT_SESSION_COMMANDS.buildUpon()
-        .also { builder ->
-            SessionCommands.all.forEach { builder.add(it) }
-            builder.add(Player.COMMAND_STOP)
-        }
-        .build()
-
-    private val playerListener = object : Player.Listener {
-        override fun onIsPlayingChanged(isPlaying: Boolean) {
-            if (isPlaying) {
-                audioFocus.request()
-                startPositionUpdates()
-            } else {
-                audioFocus.abandon()
-                player.volume = 1f
-                persistPosition()
-            }
-        }
-
-        override fun onPlaybackStateChanged(playbackState: Int) {
-            if (playbackState == Player.STATE_ENDED) {
-                persistPosition(forceClear = true)
-            }
-        }
-
-        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-            val songId = mediaItem?.songId()
-            if (songId != null) {
-                serviceScope.launch { container?.libraryRepository?.markPlayed(songId) }
-                startPositionUpdates()
-            }
-            if (!gaplessPlayback && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
-                scheduleNonGaplessPause()
-            }
-        }
-
-        override fun onPlayerError(error: PlaybackException) {
-            // Keep the queue intact: skip to the next item so a broken file does not
-            // stop the whole session, and let the UI report it from the error flow.
-            val hasNext = player.hasNextMediaItem()
-            if (hasNext && player.mediaItemCount > 1) {
-                player.seekToNextMediaItem()
-                player.prepare()
-            }
-        }
-    }
 
     private val focusCallbacks = object : AudioFocusController.Callbacks {
         override fun onPauseForLoss() {
@@ -262,49 +213,11 @@ class PlaybackService : MediaSessionService() {
 
     private fun customLayout(): List<CommandButton> = listOf(
         CommandButton.Builder()
-            .setDisplayName(getString(R.string.cd_favorite_add))
-            .setIconResId(R.drawable.ic_notification_favorite)
-            .setSessionCommand(SessionCommands.TOGGLE_FAVORITE_COMMAND)
-            .build(),
-        CommandButton.Builder()
             .setDisplayName(getString(R.string.action_close))
             .setIconResId(R.drawable.ic_notification_stop)
             .setPlayerCommand(Player.COMMAND_STOP)
             .build(),
     )
-
-    private inner class SessionCallback : MediaSession.Callback {
-
-        override fun onConnect(
-            session: MediaSession,
-            controller: MediaSession.ControllerInfo,
-        ): MediaSession.ConnectionResult =
-            MediaSession.ConnectionResult.AcceptedResultBuilder(session).build()
-
-        override fun onCustomCommand(
-            session: MediaSession,
-            controller: MediaSession.ControllerInfo,
-            customCommand: SessionCommand,
-            args: Bundle,
-        ): ListenableFuture<SessionResult> = Futures.immediateFuture(
-            when (customCommand.customAction) {
-                SessionCommands.TOGGLE_FAVORITE -> handleToggleFavorite(args)
-                else -> SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED)
-            },
-        )
-
-        private fun handleToggleFavorite(args: Bundle): SessionResult {
-            val songId = args.getLong(SessionCommands.EXTRA_SONG_ID, -1L)
-            val library = container?.libraryRepository
-                ?: return SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED)
-            serviceScope.launch {
-                if (songId <= 0L) return@launch
-                val song = library.song(songId).first()
-                library.setFavorite(songId, !(song?.isFavorite ?: false))
-            }
-            return SessionResult(SessionResult.RESULT_SUCCESS)
-        }
-    }
 
     companion object {
         const val SESSION_ID = "AlexaPlayerSession"
