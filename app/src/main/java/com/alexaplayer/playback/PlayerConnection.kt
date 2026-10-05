@@ -95,7 +95,7 @@ class PlayerConnection(context: Context) {
     fun release() {
         tickerJob?.cancel()
         controller?.removeListener(listener)
-        runCatching { controllerFuture?.release() }
+        runCatching { controller?.release() }
         controllerFuture = null
         controller = null
         _connected.value = false
@@ -320,7 +320,6 @@ internal fun mapError(error: PlaybackException): PlaybackErrorKey = when (error.
     PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED,
     PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED,
     PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED,
-    PlaybackException.ERROR_CODE_PARSING_CONTAINER_EMPTY,
     -> PlaybackErrorKey.UNSUPPORTED_FORMAT
 
     PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,

@@ -29,11 +29,11 @@ object MediaPermission {
      */
     fun isBlocked(context: Context): Boolean {
         if (isGranted(context)) return false
-        val permanentlyDenied = required.any {
-            ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_DENIED &&
-                !ContextCompat.shouldShowRequestPermissionRationale(context, it)
+        // Without an Activity in hand the rationale flag is not readable, so treat a missing
+        // grant as "not yet granted" and let the UI offer the button again.
+        return required.any {
+            ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
         }
-        return permanentlyDenied
     }
 }
 

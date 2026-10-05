@@ -22,12 +22,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.alexaplayer.R
-import com.alexaplayer.core.designsystem.component.AlbumRowItem
 import com.alexaplayer.core.designsystem.component.AlexaIconButton
-import com.alexaplayer.core.designsystem.component.ArtistRowItem
 import com.alexaplayer.core.designsystem.component.EmptyState
-import com.alexaplayer.core.designsystem.component.PlaylistCard
-import com.alexaplayer.core.designsystem.component.SettingsRow
 import com.alexaplayer.core.designsystem.theme.AlexaSpacing
 import com.alexaplayer.core.model.Song
 import com.alexaplayer.ui.component.AlexaTopBar
@@ -35,6 +31,10 @@ import com.alexaplayer.ui.component.SearchField
 import com.alexaplayer.ui.component.SectionHeader
 import com.alexaplayer.ui.component.SongRow
 import com.alexaplayer.data.repository.SearchResults
+import com.alexaplayer.ui.component.AlbumRowItem
+import com.alexaplayer.ui.component.ArtistRowItem
+import com.alexaplayer.ui.component.PlaylistCard
+import com.alexaplayer.ui.component.SettingsRow
 
 /**
  * Search across songs, albums, artists and playlists at once. History is only shown while

@@ -1,5 +1,9 @@
 package com.alexaplayer.ui.screen.streams
 
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.Text
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.AlertDialog
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,7 +27,6 @@ import com.alexaplayer.core.designsystem.component.PrimaryButton
 import com.alexaplayer.core.designsystem.theme.AlexaSpacing
 import com.alexaplayer.core.model.Song
 import com.alexaplayer.ui.component.AlexaTopBar
-import com.alexaplayer.ui.component.NameInputDialog
 import com.alexaplayer.ui.component.SongRow
 
 /** User added network streams; played through the same Media3 session as local files. */
@@ -116,19 +119,33 @@ private fun StreamInputDialog(onConfirm: (url: String, title: String) -> Unit, o
     var url by remember { mutableStateOf("") }
     var title by remember { mutableStateOf("") }
 
-    NameInputDialog(
-        title = stringResource(R.string.streams_add),
-        label = stringResource(R.string.streams_url_label),
-        confirmLabel = stringResource(R.string.action_save),
-        value = url,
-        onValueChange = { url = it },
-        errorText = if (url.isBlank() || url.startsWith("http")) {
-            null
-        } else {
-            stringResource(R.string.streams_url_error)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.streams_add)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(AlexaSpacing.sm)) {
+                OutlinedTextField(
+                    value = url,
+                    onValueChange = { url = it },
+                    label = { Text(stringResource(R.string.streams_url_label)) },
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    label = { Text(stringResource(R.string.streams_title)) },
+                    singleLine = true,
+                )
+            }
         },
-        onConfirm = { onConfirm(url.trim(), title.ifBlank { url.trim() }) },
-        onDismiss = onDismiss,
-        supportingText = title.ifBlank { null },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(url.trim(), title.trim().ifBlank { url.trim() }) },
+                enabled = url.trim().startsWith("http"),
+            ) { Text(stringResource(R.string.action_save)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+        },
     )
 }

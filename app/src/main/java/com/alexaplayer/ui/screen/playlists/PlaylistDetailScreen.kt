@@ -34,7 +34,7 @@ import com.alexaplayer.core.designsystem.component.SecondaryButton
 import com.alexaplayer.core.designsystem.theme.AlexaRadius
 import com.alexaplayer.core.designsystem.theme.AlexaSpacing
 import com.alexaplayer.core.model.Song
-import com.alexaplayer.core.util.formatDurationLong
+import com.alexaplayer.core.util.DurationFormatter
 import com.alexaplayer.ui.component.AlexaTopBar
 import com.alexaplayer.ui.component.ConfirmDialog
 import com.alexaplayer.ui.component.NameInputDialog
@@ -98,7 +98,6 @@ fun PlaylistDetailScreen(
             onBack = onBack,
             actions = {
                 AlexaIconButton(
-                    iconRes = R.drawable.ic_more_vert,
                     contentDescription = stringResource(R.string.cd_more_options),
                     onClick = { showRename = true },
                 )
@@ -113,7 +112,6 @@ fun PlaylistDetailScreen(
                 contentAlignment = Alignment.Center,
             ) {
                 EmptyState(
-                    iconRes = R.drawable.ic_playlists,
                     title = stringResource(R.string.playlist_empty_title),
                     body = stringResource(R.string.playlist_empty_body),
                     action = {
@@ -163,7 +161,6 @@ fun PlaylistDetailScreen(
                     trailing = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             AlexaIconButton(
-                                iconRes = R.drawable.ic_drag_handle,
                                 contentDescription = stringResource(R.string.playlist_reorder_hint),
                                 onClick = {},
                             )
@@ -193,25 +190,22 @@ private fun PlaylistHeader(
         ) {
             SecondaryButton(
                 text = stringResource(R.string.action_play),
-                iconRes = R.drawable.ic_play,
                 onClick = onPlayAll,
                 modifier = Modifier.weight(1f),
             )
             QuietButton(
                 text = stringResource(R.string.action_shuffle),
-                iconRes = R.drawable.ic_shuffle,
                 onClick = onShuffle,
                 modifier = Modifier.weight(1f),
             )
         }
         Text(
-            text = stringResource(R.string.playlist_summary, songCount, formatDurationLong(totalDurationMs)),
+            text = stringResource(R.string.playlist_summary, songCount, DurationFormatter.formatTotal(totalDurationMs)),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         QuietButton(
             text = stringResource(R.string.playlist_add_songs),
-            iconRes = R.drawable.ic_add,
             onClick = onAddSongs,
             modifier = Modifier.padding(top = AlexaSpacing.sm),
         )

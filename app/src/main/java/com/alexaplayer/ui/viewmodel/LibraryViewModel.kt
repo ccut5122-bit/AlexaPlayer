@@ -121,7 +121,7 @@ class LibraryViewModel(
     }
 
     fun selectSortOrder(value: SortOrder) {
-        settings.setSortOrder(value)
+        viewModelScope.launch { settings.setSortOrder(value) }
     }
 
     fun play(songs: List<Song>, index: Int) {

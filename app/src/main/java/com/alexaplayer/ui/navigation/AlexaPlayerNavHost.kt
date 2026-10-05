@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import android.net.Uri
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -74,7 +75,7 @@ fun AlexaPlayerNavHost(container: AppContainer, modifier: Modifier = Modifier) {
     val currentSongId = playback.currentSongId
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
-    val showBottomBar = TopLevelDestinations.any { it.route == currentRoute }
+    val showBottomBar = TopLevelDestination.entries.any { it.route == currentRoute }
 
     var sheetTarget by remember { mutableStateOf<SongSheetTarget?>(null) }
     var playlistPickerFor by rememberSaveable { mutableStateOf<Long?>(null) }
@@ -519,7 +520,7 @@ fun AlexaPlayerNavHost(container: AppContainer, modifier: Modifier = Modifier) {
                     SongAction.ADD_PLAYLIST -> scope.launch {
                         pickerSelection = emptySet()
                         playlistPickerFor = target.playlistId
-                            ?: container.playlistRepository.playlists.firstOrNull()?.id
+                            ?: container.playlistRepository.playlists.first().firstOrNull()?.id
                     }
                     SongAction.REMOVE_FROM_PLAYLIST -> scope.launch {
                         container.playlistRepository.removeSong(target.playlistId ?: 0L, target.song.id)

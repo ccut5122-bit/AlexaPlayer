@@ -1,5 +1,9 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package com.alexaplayer.ui.component
 
+import com.alexaplayer.core.designsystem.component.QuietButton
+import com.alexaplayer.core.designsystem.component.DecorativeIcon
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box

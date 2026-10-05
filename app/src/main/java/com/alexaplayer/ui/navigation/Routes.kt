@@ -1,5 +1,7 @@
 package com.alexaplayer.ui.navigation
 
+import com.alexaplayer.R
+
 /** Every destination in the app. Kept as constants so no route string is ever duplicated. */
 object Routes {
     const val HOME = "home"

@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -23,7 +25,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.alexaplayer.R
-import com.alexaplayer.core.designsystem.component.AlbumRowItem
 import com.alexaplayer.core.designsystem.component.AlexaIconButton
 import com.alexaplayer.core.designsystem.component.Artwork
 import com.alexaplayer.core.designsystem.component.EmptyState
@@ -32,11 +33,12 @@ import com.alexaplayer.core.designsystem.component.QuietButton
 import com.alexaplayer.core.designsystem.theme.AlexaRadius
 import com.alexaplayer.core.designsystem.theme.AlexaSpacing
 import com.alexaplayer.core.model.Song
-import com.alexaplayer.core.util.formatDurationLong
+import com.alexaplayer.core.util.DurationFormatter
 import com.alexaplayer.ui.component.AlexaTopBar
 import com.alexaplayer.ui.component.SectionHeader
 import com.alexaplayer.ui.component.SongRow
 import com.alexaplayer.ui.viewmodel.DetailViewModel
+import com.alexaplayer.ui.component.AlbumRowItem
 
 /** Shared screen for an album or an artist: header, primary actions and the song list. */
 @Composable
@@ -63,7 +65,6 @@ fun DetailScreen(
                 contentAlignment = Alignment.Center,
             ) {
                 EmptyState(
-                    iconRes = R.drawable.ic_song,
                     title = stringResource(R.string.detail_empty_title),
                     body = state.subtitle,
                 )
@@ -112,7 +113,6 @@ fun DetailScreen(
                     onLongClick = { onMore(song) },
                     trailing = {
                         AlexaIconButton(
-                            iconRes = R.drawable.ic_more_vert,
                             contentDescription = stringResource(R.string.cd_more_options),
                             onClick = { onMore(song) },
                         )
@@ -137,10 +137,11 @@ private fun DetailHeader(
             .padding(horizontal = AlexaSpacing.lg, vertical = AlexaSpacing.md),
     ) {
         Artwork(
-            uri = state.artworkUri,
+            artworkUri = state.artworkUri,
+            seed = state.seed,
             contentDescription = state.title,
-            size = 180.dp,
-            shape = AlexaRadius.extraLarge,
+            shape = RoundedCornerShape(AlexaRadius.artworkLarge),
+            modifier = Modifier.size(180.dp),
         )
         Text(
             text = state.title,
@@ -163,7 +164,7 @@ private fun DetailHeader(
             text = stringResource(
                 R.string.playlist_summary,
                 state.songCount,
-                formatDurationLong(state.totalDurationMs),
+                DurationFormatter.formatTotal(state.totalDurationMs),
             ),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -175,13 +176,11 @@ private fun DetailHeader(
         ) {
             PrimaryButton(
                 text = stringResource(R.string.action_play),
-                iconRes = R.drawable.ic_play,
                 onClick = onPlayAll,
                 modifier = Modifier.weight(1f),
             )
             QuietButton(
                 text = stringResource(R.string.action_shuffle),
-                iconRes = R.drawable.ic_shuffle,
                 onClick = onShuffle,
                 modifier = Modifier.weight(1f),
             )

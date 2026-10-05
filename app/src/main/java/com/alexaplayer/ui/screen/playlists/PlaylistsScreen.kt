@@ -22,13 +22,13 @@ import androidx.compose.ui.unit.dp
 import com.alexaplayer.R
 import com.alexaplayer.core.designsystem.component.AlexaIconButton
 import com.alexaplayer.core.designsystem.component.EmptyState
-import com.alexaplayer.core.designsystem.component.PlaylistCard
 import com.alexaplayer.core.designsystem.component.PrimaryButton
 import com.alexaplayer.core.designsystem.theme.AlexaSpacing
 import com.alexaplayer.core.model.Playlist
 import com.alexaplayer.ui.component.AlexaTopBar
 import com.alexaplayer.ui.component.ConfirmDialog
 import com.alexaplayer.ui.component.NameInputDialog
+import com.alexaplayer.ui.component.PlaylistCard
 
 @Composable
 fun PlaylistsScreen(

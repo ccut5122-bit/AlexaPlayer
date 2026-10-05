@@ -216,7 +216,7 @@ private fun ThemeChip(label: String, selected: Boolean, onClick: () -> Unit) {
     }
     Box(
         modifier = Modifier
-            .clip(AlexaRadius.medium)
+            .clip(AlexaRadius.md)
             .background(background)
             .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
             .padding(horizontal = AlexaSpacing.lg, vertical = AlexaSpacing.sm),

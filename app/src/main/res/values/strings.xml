@@ -283,4 +283,8 @@
     <string name="permission_denied_body">Permission was denied, so the library stays empty. Grant music access from system settings to start listening.</string>
     <string name="permission_grant">Grant access</string>
     <string name="permission_settings_hint">Settings › Apps › Alexa Player › Permissions › Music and audio</string>
+    <string name="playlist_summary">%1$d songs · %2$s</string>
+    <string name="action_favorite_add">Add to favourites</string>
+    <string name="action_favorite_remove">Remove from favourites</string>
+    <string name="msg_rescan_complete">Library scan finished</string>
 </resources>

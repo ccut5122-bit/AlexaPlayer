@@ -122,8 +122,8 @@ class PlaybackService : MediaSessionService() {
 
     private fun observePlaybackForHistory() {
         serviceScope.launch {
-            player.currentMediaItemIndexFlow.collect { index ->
-                val songId = player.getCurrentMediaItem()?.songId() ?: return@collect
+            player.currentMediaItem.collect { item ->
+                val songId = item?.songId() ?: return@collect
                 container?.libraryRepository?.markPlayed(songId)
                 startPositionUpdates()
             }
@@ -283,7 +283,8 @@ class PlaybackService : MediaSessionService() {
                 }
                 .build()
 
-            return MediaSession.ConnectionResult.AcceptedResultBuilder(session, sessionCommands).build()
+            session.setSessionCommands(sessionCommands)
+            return MediaSession.ConnectionResult.AcceptedResultBuilder(session).build()
         }
 
         override fun onCustomCommand(
@@ -291,23 +292,21 @@ class PlaybackService : MediaSessionService() {
             controller: MediaSession.ControllerInfo,
             customCommand: SessionCommand,
             args: Bundle,
-        ): List<SessionResult> {
-            return when (customCommand.customAction) {
-                SessionCommands.TOGGLE_FAVORITE -> handleToggleFavorite(args)
-                else -> listOf(SessionResult(MediaSessionCommands.RESULT_ERROR_NOT_SUPPORTED))
-            }
+        ): SessionResult = when (customCommand.customAction) {
+            SessionCommands.TOGGLE_FAVORITE -> handleToggleFavorite(args)
+            else -> SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED)
         }
 
-        private fun handleToggleFavorite(args: Bundle): List<SessionResult> {
+        private fun handleToggleFavorite(args: Bundle): SessionResult {
             val songId = args.getLong(SessionCommands.EXTRA_SONG_ID, -1L)
             val library = container?.libraryRepository
-                ?: return listOf(SessionResult(MediaSessionCommands.RESULT_ERROR_NOT_SUPPORTED))
+                ?: return SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED)
             serviceScope.launch {
                 if (songId <= 0L) return@launch
                 val song = library.song(songId).first()
                 library.setFavorite(songId, !(song?.isFavorite ?: false))
             }
-            return listOf(SessionResult(MediaSessionCommands.RESULT_SUCCESS))
+            return SessionResult(SessionResult.RESULT_SUCCESS)
         }
     }
 

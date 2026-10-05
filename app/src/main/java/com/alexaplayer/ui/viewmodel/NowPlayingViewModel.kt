@@ -74,7 +74,9 @@ class NowPlayingViewModel(
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val upNext: StateFlow<List<Song>> = playerConnection.state
-        .flatMapLatest { playback -> library.songsByIds(playback.upNextIds.take(UP_NEXT_LIMIT)) }
+        .flatMapLatest { playback ->
+            flow { emit(library.songsByIds(playback.upNextIds.take(UP_NEXT_LIMIT))) }
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptyList())
 
     private val _errors = MutableSharedFlow<Int>(extraBufferCapacity = 2)
