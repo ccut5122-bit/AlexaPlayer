@@ -65,6 +65,7 @@ fun DetailScreen(
                 contentAlignment = Alignment.Center,
             ) {
                 EmptyState(
+                    iconRes = R.drawable.ic_song,
                     title = stringResource(R.string.detail_empty_title),
                     body = state.subtitle,
                 )

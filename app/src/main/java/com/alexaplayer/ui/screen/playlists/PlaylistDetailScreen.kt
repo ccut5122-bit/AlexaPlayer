@@ -114,6 +114,7 @@ fun PlaylistDetailScreen(
                 contentAlignment = Alignment.Center,
             ) {
                 EmptyState(
+                    iconRes = R.drawable.ic_playlists,
                     title = stringResource(R.string.playlist_empty_title),
                     body = stringResource(R.string.playlist_empty_body),
                     action = {

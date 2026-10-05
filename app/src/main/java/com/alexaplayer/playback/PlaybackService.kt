@@ -177,6 +177,57 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
+private val playerListener = object : Player.Listener {
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            if (isPlaying) {
+                audioFocus.request()
+                startPositionUpdates()
+            } else {
+                audioFocus.abandon()
+                player.volume = 1f
+                persistPosition()
+            }
+        }
+
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            if (playbackState == Player.STATE_ENDED) {
+                persistPosition(forceClear = true)
+            }
+        }
+
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            val songId = mediaItem?.songId()
+            if (songId != null) {
+                serviceScope.launch { container?.libraryRepository?.markPlayed(songId) }
+                startPositionUpdates()
+            }
+            if (!gaplessPlayback && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
+                scheduleNonGaplessPause()
+            }
+        }
+
+        override fun onPlayerError(error: PlaybackException) {
+            // Keep the queue intact: skip to the next item so a broken file does not
+            // stop the whole session, and let the UI report it from the error flow.
+            val hasNext = player.hasNextMediaItem()
+            if (hasNext && player.mediaItemCount > 1) {
+                player.seekToNextMediaItem()
+                player.prepare()
+            }
+        }
+    }
+
+private inner class SessionCallback : MediaSession.Callback {
+
+        override fun onConnect(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+        ): MediaSession.ConnectionResult =
+            MediaSession.ConnectionResult.AcceptedResultBuilder(session).build()
+
+
+    }
+
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession
 
     override fun onTaskRemoved(rootIntent: Intent?) {
