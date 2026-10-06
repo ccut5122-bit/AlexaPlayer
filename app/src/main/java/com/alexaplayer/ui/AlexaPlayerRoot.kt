@@ -1,6 +1,7 @@
 package com.alexaplayer.ui
 
 import android.Manifest
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -28,6 +29,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.alexaplayer.R
 import com.alexaplayer.core.designsystem.component.EmptyState
@@ -98,7 +100,7 @@ fun AlexaPlayerRoot(
                         if (asked) R.string.permission_denied_body else R.string.permission_body,
                     ),
                     action = {
-                        if (asked && !context.canAskForAudioPermission()) {
+                        if (asked && (context as? Activity)?.canAskForAudioPermission() == false) {
                             PrimaryButton(
                                 text = stringResource(R.string.permission_open_settings),
                                 onClick = { context.openAppSettings() },
@@ -140,9 +142,9 @@ private fun Context.hasAudioPermission(): Boolean =
 /**
  * After two denials the system stops showing the dialog, so the only way forward is app settings.
  */
-private fun Context.canAskForAudioPermission(): Boolean =
+private fun Activity.canAskForAudioPermission(): Boolean =
     Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
-        ContextCompat.shouldShowRequestPermissionRationale(this, audioPermission())
+        ActivityCompat.shouldShowRequestPermissionRationale(this, audioPermission())
 
 private fun Context.openAppSettings() {
     runCatching {
