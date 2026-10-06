@@ -142,7 +142,7 @@ private fun Context.hasAudioPermission(): Boolean =
  */
 private fun Context.canAskForAudioPermission(): Boolean =
     Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
-        shouldShowRequestPermissionRationale(audioPermission())
+        ContextCompat.shouldShowRequestPermissionRationale(this, audioPermission())
 
 private fun Context.openAppSettings() {
     runCatching {
