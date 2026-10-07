@@ -69,7 +69,8 @@ class PlaybackService : MediaSessionService() {
             // present the exact same UA the extractor just used.
             .setMediaSourceFactory(
                 DefaultMediaSourceFactory(
-                    DefaultDataSource.Factory(this).setHttpDataSourceFactory(
+                    DefaultDataSource.Factory(
+                        this,
                         DefaultHttpDataSource.Factory().setUserAgent(STREAM_USER_AGENT),
                     ),
                 ),
