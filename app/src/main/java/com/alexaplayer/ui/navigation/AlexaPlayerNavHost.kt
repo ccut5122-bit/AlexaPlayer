@@ -156,6 +156,7 @@ fun AlexaPlayerNavHost(container: AppContainer, modifier: Modifier = Modifier) {
                     onPlay = { track ->
                         vm.play(track) { song -> rootViewModel.openSong(listOf(song), 0) }
                     },
+                    onOpenGenre = vm::openGenre,
                     onRetry = vm::retry,
                 )
             }

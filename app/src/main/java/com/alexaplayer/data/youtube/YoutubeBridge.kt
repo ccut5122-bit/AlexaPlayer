@@ -1,6 +1,8 @@
 package com.alexaplayer.data.youtube
 
+import android.content.Context
 import com.chaquo.python.Python
+import com.chaquo.python.android.AndroidPlatform
 import com.alexaplayer.core.model.Song
 import com.alexaplayer.core.model.Source
 import kotlinx.coroutines.Dispatchers
@@ -36,9 +38,18 @@ data class ResolvedStream(
  * changes every few months), Kotlin only ever sees JSON, so a yt-dlp upgrade can never
  * break a Compose signature.
  */
-class YoutubeBridge {
+class YoutubeBridge(context: Context) {
 
-    private val module by lazy { Python.getInstance().getModule("ytmusic") }
+    /**
+     * The runtime has to sit on the Android platform before py objects exist; without this
+     * Chaquopy throws "Cannot use Generic Platform on Android". Started once, lazily, on
+     * whatever thread first touches the bridge.
+     */
+    private val python by lazy {
+        Python.start(AndroidPlatform(context.applicationContext))
+    }
+
+    private val module by lazy { python.getModule("ytmusic") }
 
     suspend fun search(query: String, limit: Int = 25): List<YoutubeTrack> =
         withContext(Dispatchers.IO) {

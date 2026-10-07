@@ -62,7 +62,7 @@ class AppContainer(context: Context) {
 
     val playerConnection: PlayerConnection by lazy { PlayerConnection(appContext) }
 
-    val youtubeBridge: YoutubeBridge by lazy { YoutubeBridge() }
+    val youtubeBridge: YoutubeBridge by lazy { YoutubeBridge(appContext) }
 
     val settings: StateFlow<Settings> = settingsRepository.settings
         .stateIn(appScope, SharingStarted.Eagerly, Settings())
