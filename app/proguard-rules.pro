@@ -1,3 +1,10 @@
+# Shrink hard: merge every remaining class into one root package, mangle member names and
+# drop any access modifiers R8 no longer needs. Decompiling still yields bytecode, but names,
+# structure and the original source layout no longer survive.
+-repackageclasses ""
+-allowaccessmodification
+-overloadaggressively
+
 # Keep line numbers for readable crash reports while still obfuscating names.
 -keepattributes SourceFile,LineNumberTable
 -renamesourcefileattribute SourceFile

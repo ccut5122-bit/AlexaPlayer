@@ -29,10 +29,11 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
 
-        // Chaquopy ships a native CPython per ABI, so the set has to be explicit. Keeping
-        // arm64, 32-bit ARM and the emulator's x86_64 covers every device this app targets.
+        // Chaquopy ships a native CPython per ABI, so the set has to be explicit. Python 3.13
+        // has no armv7 build; arm64 covers every real device left in the field and x86_64
+        // keeps emulators working.
         ndk {
-            abiFilters.addAll(setOf("arm64-v8a", "armeabi-v7a", "x86_64"))
+            abiFilters.addAll(setOf("arm64-v8a", "x86_64"))
         }
     }
 
@@ -84,6 +85,12 @@ android {
                 "/META-INF/{AL2.0,LGPL2.1}",
                 "/META-INF/DEPENDENCIES",
                 "/META-INF/INDEX.LIST",
+                "/META-INF/*.kotlin_module",
+                "/META-INF/*.version",
+                "/META-INF/LICENSE*",
+                "/META-INF/NOTICE*",
+                "/kotlin/**",
+                "DebugProbesKt.bin",
             )
         }
     }
