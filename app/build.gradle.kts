@@ -28,6 +28,12 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
+
+        // Chaquopy ships a native CPython per ABI, so the set has to be explicit. Keeping
+        // arm64, 32-bit ARM and the emulator's x86_64 covers every device this app targets.
+        ndk {
+            abiFilters.addAll(setOf("arm64-v8a", "armeabi-v7a", "x86_64"))
+        }
     }
 
     signingConfigs {
