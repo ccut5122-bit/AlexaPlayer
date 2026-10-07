@@ -49,6 +49,7 @@ import com.alexaplayer.ui.screen.queue.QueueScreen
 import com.alexaplayer.ui.screen.search.SearchScreen
 import com.alexaplayer.ui.screen.settings.SettingsScreen
 import com.alexaplayer.ui.screen.streams.StreamsScreen
+import com.alexaplayer.ui.screen.youtube.YoutubeScreen
 import com.alexaplayer.ui.viewmodel.DetailTarget
 import com.alexaplayer.ui.viewmodel.DetailViewModel
 import com.alexaplayer.ui.viewmodel.HomeViewModel
@@ -60,6 +61,7 @@ import com.alexaplayer.ui.viewmodel.QueueViewModel
 import com.alexaplayer.ui.viewmodel.RootViewModel
 import com.alexaplayer.ui.viewmodel.SearchViewModel
 import com.alexaplayer.ui.viewmodel.SettingsViewModel
+import com.alexaplayer.ui.viewmodel.YoutubeViewModel
 import com.alexaplayer.ui.viewmodel.StreamsViewModel
 
 private enum class SongAction { PLAY_NEXT, ADD_QUEUE, ADD_PLAYLIST, REMOVE_FROM_PLAYLIST, FAVOURITE, DELETE_STREAM }
@@ -139,6 +141,22 @@ fun AlexaPlayerNavHost(container: AppContainer, modifier: Modifier = Modifier) {
                     onOpenLibrary = { navController.navigate(Routes.LIBRARY) },
                     onOpenSettings = { navController.navigate(Routes.SETTINGS) },
                     onMore = { sheetTarget = SongSheetTarget(it, null, false) },
+                )
+            }
+
+            composable(Routes.YOUTUBE) {
+                val vm: YoutubeViewModel = viewModel(factory = YoutubeViewModel.factory(container))
+                val state by vm.uiState.collectAsStateWithLifecycle()
+                YoutubeScreen(
+                    state = state,
+                    contentPadding = padding,
+                    onQueryChange = vm::onQueryChange,
+                    onSubmit = vm::submit,
+                    onClear = vm::clearQuery,
+                    onPlay = { track ->
+                        vm.play(track) { song -> rootViewModel.openSong(listOf(song), 0) }
+                    },
+                    onRetry = vm::retry,
                 )
             }
 

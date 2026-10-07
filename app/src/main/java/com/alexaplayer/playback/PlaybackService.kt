@@ -9,7 +9,10 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.CommandButton
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
@@ -62,6 +65,15 @@ class PlaybackService : MediaSessionService() {
         container = (application as AlexaPlayerApp).container
 
         player = ExoPlayer.Builder(this)
+            // YouTube's CDN is picky about the client it resolved for, so playback has to
+            // present the exact same UA the extractor just used.
+            .setMediaSourceFactory(
+                DefaultMediaSourceFactory(
+                    DefaultDataSource.Factory(this).setHttpDataSourceFactory(
+                        DefaultHttpDataSource.Factory().setUserAgent(STREAM_USER_AGENT),
+                    ),
+                ),
+            )
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
@@ -276,6 +288,15 @@ private inner class SessionCallback : MediaSession.Callback {
         const val NOTIFICATION_ID = 4711
 
         private const val SEEK_INCREMENT_MS = 10_000L
+
+        /**
+         * Must match the header [com.alexaplayer.data.youtube.YoutubeBridge] resolved with:
+         * YouTube's CDN answers a different client than the one that asked for the stream
+         * with 403.
+         */
+        private const val STREAM_USER_AGENT =
+            "Mozilla/5.0 (Linux; Android 11) AppleWebKit/537.36 (KHTML, like Gecko) " +
+                "Chrome/120.0 Mobile Safari/537.36"
         private const val POSITION_SAVE_INTERVAL_MS = 5_000L
         private const val FINISHED_THRESHOLD_MS = 3_000L
         private const val NON_GAPLESS_PAUSE_MS = 450L

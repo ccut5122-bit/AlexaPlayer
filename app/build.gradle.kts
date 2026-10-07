@@ -29,11 +29,11 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
 
-        // Chaquopy ships a native CPython per ABI, so the set has to be explicit. Python 3.13
-        // has no armv7 build; arm64 covers every real device left in the field and x86_64
-        // keeps emulators working.
+        // Chaquopy ships a native CPython per ABI, so the set has to be explicit. arm64 only:
+        // Python 3.13 has no armv7 build, and shipping x86_64 would add ~11 MB that no phone
+        // can load.
         ndk {
-            abiFilters.addAll(setOf("arm64-v8a", "x86_64"))
+            abiFilters.addAll(setOf("arm64-v8a"))
         }
     }
 

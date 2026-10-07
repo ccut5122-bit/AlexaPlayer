@@ -90,10 +90,12 @@ class PlaylistRepository(
 
     /** @return how many songs were actually added; duplicates are silently skipped. */
     suspend fun addSongs(playlistId: Long, songIds: List<Long>): Int = withContext(dispatchers.io) {
-        if (songIds.isEmpty()) return@withContext 0
+        // Only rows that exist can be linked; in-memory YouTube tracks are not in the table.
+        val persisted = songIds.filter { it > 0 }
+        if (persisted.isEmpty()) return@withContext 0
         val now = System.currentTimeMillis()
         var nextPosition = playlistDao.maxPosition(playlistId) + 1
-        val rows = songIds.map { songId ->
+        val rows = persisted.map { songId ->
             PlaylistSongEntity(
                 playlistId = playlistId,
                 songId = songId,

@@ -5,6 +5,7 @@ import com.alexaplayer.R
 /** Every destination in the app. Kept as constants so no route string is ever duplicated. */
 object Routes {
     const val HOME = "home"
+    const val YOUTUBE = "youtube"
     const val LIBRARY = "library"
     const val PLAYLISTS = "playlists"
     const val SETTINGS = "settings"
@@ -40,6 +41,7 @@ enum class TopLevelDestination(
     val labelRes: Int,
 ) {
     HOME(Routes.HOME, R.drawable.ic_home, R.string.nav_home),
+    YOUTUBE(Routes.YOUTUBE, R.drawable.ic_headphones, R.string.nav_youtube),
     LIBRARY(Routes.LIBRARY, R.drawable.ic_library, R.string.nav_library),
     PLAYLISTS(Routes.PLAYLISTS, R.drawable.ic_playlists, R.string.nav_playlists),
     SETTINGS(Routes.SETTINGS, R.drawable.ic_settings, R.string.nav_settings),

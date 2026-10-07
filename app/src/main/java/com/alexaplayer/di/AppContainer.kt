@@ -11,6 +11,7 @@ import com.alexaplayer.data.media.MediaStoreScanner
 import com.alexaplayer.data.repository.LibraryRepository
 import com.alexaplayer.data.repository.PlaylistRepository
 import com.alexaplayer.data.repository.SearchRepository
+import com.alexaplayer.data.youtube.YoutubeBridge
 import com.alexaplayer.playback.PlayerConnection
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -60,6 +61,8 @@ class AppContainer(context: Context) {
     }
 
     val playerConnection: PlayerConnection by lazy { PlayerConnection(appContext) }
+
+    val youtubeBridge: YoutubeBridge by lazy { YoutubeBridge() }
 
     val settings: StateFlow<Settings> = settingsRepository.settings
         .stateIn(appScope, SharingStarted.Eagerly, Settings())

@@ -147,12 +147,16 @@ class LibraryRepository(
     }
 
     suspend fun setFavorite(songId: Long, favorite: Boolean) = withContext(dispatchers.io) {
+        // YouTube tracks live in memory only; their negative ids point at no row, and the
+        // favorites table would reject them on its foreign key.
+        if (songId < 0) return@withContext
         songDao.setFavorite(songId, favorite)
     }
 
     suspend fun setFavorites(songIds: List<Long>, favorite: Boolean) = withContext(dispatchers.io) {
-        if (songIds.isEmpty()) return@withContext
-        if (favorite) songDao.addFavorites(songIds) else songDao.removeFavorites(songIds)
+        val persisted = songIds.filter { it > 0 }
+        if (persisted.isEmpty()) return@withContext
+        if (favorite) songDao.addFavorites(persisted) else songDao.removeFavorites(persisted)
     }
 
     suspend fun markPlayed(songId: Long, timestamp: Long = System.currentTimeMillis()) =
