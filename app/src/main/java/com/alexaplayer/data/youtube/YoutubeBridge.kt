@@ -77,8 +77,9 @@ class YoutubeBridge(context: Context) {
     private val module: com.chaquo.python.PyObject
 
     init {
-        python = Python.start(AndroidPlatform(appContext))
-        module = python.getModule<com.chaquo.python.PyObject>("ytmusic")
+        Python.start(AndroidPlatform(appContext))
+        python = Python.getInstance()
+        module = python.getModule("ytmusic")
     }
 
     suspend fun search(query: String, limit: Int = 25): List<YoutubeTrack> =
