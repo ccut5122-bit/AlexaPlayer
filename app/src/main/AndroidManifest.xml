@@ -45,6 +45,14 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".ui.video.VideoPlayerActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout"
+            android:exported="false"
+            android:hardwareAccelerated="true"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.AlexaPlayer" />
+
         <!--
             Playback lives in a MediaSessionService so that audio, the media
             notification and the media session survive the Activity being

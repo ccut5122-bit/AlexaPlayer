@@ -33,12 +33,37 @@ data class ResolvedStream(
     val thumbnailUrl: String,
 )
 
+/** A finished download: absolute path on disk plus what kind of file it is. */
+data class DownloadResult(
+    val path: String,
+    val title: String,
+    val ext: String,
+)
+
+/** Progress of one live download; polled from the UI thread via a coroutine. */
+data class DownloadProgress(
+    val status: String,
+    val downloaded: Long,
+    val total: Long,
+    val path: String? = null,
+)
+
+/** One in-progress download tracked by the view model with a progress percent. */
+data class ActiveDownload(
+    val token: String,
+    val kind: String,
+    val title: String,
+    val percent: Int,
+    val done: Boolean,
+    val path: String? = null,
+)
+
 /**
  * Thin wrapper over the bundled yt-dlp. Python does the hard work (signature deciphering
  * changes every few months), Kotlin only ever sees JSON, so a yt-dlp upgrade can never
  * break a Compose signature.
  */
-class YoutubeBridge(context: Context) {
+class YoutubeBridge(appContext: Context) {
 
     /**
      * The runtime has to sit on the Android platform before py objects exist; without this
@@ -46,7 +71,7 @@ class YoutubeBridge(context: Context) {
      * whatever thread first touches the bridge.
      */
     private val python by lazy {
-        Python.start(AndroidPlatform(context.applicationContext))
+        Python.start(AndroidPlatform(appContext.applicationContext))
     }
 
     private val module by lazy { python.getModule("ytmusic") }
@@ -93,6 +118,58 @@ class YoutubeBridge(context: Context) {
                 channel = payload.optString("channel"),
                 durationMs = payload.optLong("duration").secondsToMillis(),
                 thumbnailUrl = payload.optString("thumbnail"),
+            )
+        }
+
+    /** Video songs play as a muxed mp4, streamed into the full-screen player. */
+    suspend fun resolveVideo(videoId: String): ResolvedStream =
+        withContext(Dispatchers.IO) {
+            val payload = JSONObject(call("resolve_video", videoId))
+            val error = payload.optString("error")
+            if (error.isNotEmpty()) throw YoutubeException(error)
+
+            val url = payload.optString("url")
+            if (url.isBlank()) throw YoutubeException("No playable video stream")
+
+            ResolvedStream(
+                videoId = videoId,
+                url = url,
+                title = payload.optString("title"),
+                channel = payload.optString("channel"),
+                durationMs = payload.optLong("duration").secondsToMillis(),
+                thumbnailUrl = payload.optString("thumbnail"),
+            )
+        }
+
+    /**
+     * Where downloads land: app-external Downloads dir. Needs no storage permission on any
+     * API level and the user can reach it via Files > Internal storage > Android/data/AlexaPlayer.
+     */
+    val downloadsDir: java.io.File
+        get() = java.io.File(appContext.applicationContext.getExternalFilesDir(null)!!, "Download")
+
+    suspend fun download(videoId: String, kind: String, token: String): DownloadResult =
+        withContext(Dispatchers.IO) {
+            downloadsDir.mkdirs()
+            val payload = JSONObject(call("download", videoId, kind, token, downloadsDir.absolutePath))
+            val error = payload.optString("error")
+            if (error.isNotEmpty()) throw YoutubeException(error)
+            DownloadResult(
+                path = payload.optString("path"),
+                title = payload.optString("title"),
+                ext = payload.optString("ext"),
+            )
+        }
+
+    /** Poll this every ~500ms while a download runs; null means "not downloadable yet". */
+    suspend fun downloadProgress(token: String): DownloadProgress =
+        withContext(Dispatchers.IO) {
+            val payload = JSONObject(call("download_progress", token))
+            DownloadProgress(
+                status = payload.optString("status"),
+                downloaded = payload.optLong("downloaded"),
+                total = payload.optLong("total"),
+                path = payload.optString("path").takeIf { it.isNotBlank() },
             )
         }
 

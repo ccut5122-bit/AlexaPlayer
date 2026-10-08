@@ -17,6 +17,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import android.net.Uri
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -50,6 +51,7 @@ import com.alexaplayer.ui.screen.search.SearchScreen
 import com.alexaplayer.ui.screen.settings.SettingsScreen
 import com.alexaplayer.ui.screen.streams.StreamsScreen
 import com.alexaplayer.ui.screen.youtube.YoutubeScreen
+import com.alexaplayer.ui.video.VideoPlayerActivity
 import com.alexaplayer.ui.viewmodel.DetailTarget
 import com.alexaplayer.ui.viewmodel.DetailViewModel
 import com.alexaplayer.ui.viewmodel.HomeViewModel
@@ -158,6 +160,17 @@ fun AlexaPlayerNavHost(container: AppContainer, modifier: Modifier = Modifier) {
                     },
                     onOpenGenre = vm::openGenre,
                     onRetry = vm::retry,
+                    onPlayVideo = { track ->
+                        vm.playVideo(track) { url, title ->
+                            val context = LocalContext.current
+                            context.startActivity(
+                                VideoPlayerActivity.intent(context, url, title),
+                            )
+                        }
+                    },
+                    onDownload = { track, kind ->
+                        vm.startDownload(track, kind)
+                    },
                 )
             }
 

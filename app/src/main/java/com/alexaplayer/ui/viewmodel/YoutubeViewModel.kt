@@ -5,12 +5,16 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.alexaplayer.data.youtube.ActiveDownload
+import com.alexaplayer.data.youtube.DownloadProgress
 import com.alexaplayer.data.youtube.YoutubeBridge
 import com.alexaplayer.data.youtube.YoutubeTrack
 import com.alexaplayer.di.AppContainer
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -38,6 +42,10 @@ data class YoutubeUiState(
     /** The row whose stream is being extracted right now. */
     val resolvingId: String? = null,
     val error: String? = null,
+    /** Live + finished downloads, with percent so rows can show real progress. */
+    val downloads: List<ActiveDownload> = emptyList(),
+    /** Transient "Saved to ..." / "Download failed" feedback for the snackbar. */
+    val message: String? = null,
 ) {
     val showingResults: Boolean get() = hasSearched || searching
 }
@@ -176,6 +184,97 @@ class YoutubeViewModel(
             }
             _uiState.value = _uiState.value.copy(resolvingId = null)
         }
+    }
+
+    /** Same flow but for the muxed video stream, funnelled into the full-screen player. */
+    fun playVideo(track: YoutubeTrack, onReady: (url: String, title: String) -> Unit) {
+        if (_uiState.value.resolvingId != null) return
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(resolvingId = track.videoId, error = null)
+            try {
+                onReady(bridge.resolveVideo(track.videoId).url, track.title)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (error: Exception) {
+                _uiState.value = _uiState.value.copy(resolvingId = null, error = error.message ?: "Video failed to load")
+                return@launch
+            }
+            _uiState.value = _uiState.value.copy(resolvingId = null)
+        }
+    }
+
+    /**
+     * Queue a download (audio or video) and pump its progress. Python does the work on a
+     * separate IO thread while this coroutine polls the bridge until it reports finished.
+     */
+    fun startDownload(track: YoutubeTrack, kind: String) {
+        if (_uiState.value.downloads.any { it.token.startsWith("${track.videoId}-") }) return
+        val token = "${track.videoId}-${kind}-${System.currentTimeMillis()}"
+        _uiState.value = _uiState.value.copy(
+            downloads = _uiState.value.downloads + ActiveDownload(
+                token = token,
+                kind = kind,
+                title = track.title,
+                percent = 0,
+                done = false,
+            ),
+            message = null,
+        )
+        viewModelScope.launch {
+            val downloadAsync = async(Dispatchers.IO) {
+                bridge.download(track.videoId, kind, token)
+            }
+            try {
+                while (downloadAsync.isActive) {
+                    delay(600)
+                    val snapshot = bridge.downloadProgress(token)
+                    when (snapshot.status) {
+                        "finished", "error" -> break
+                        else -> updateDownloadProgress(token, progressPercent(snapshot), snapshot.path)
+                    }
+                }
+                val result = try {
+                    downloadAsync.await()
+                } catch (error: Exception) {
+                    _uiState.value = _uiState.value.copy(
+                        message = "Download failed: ${error.message}",
+                        downloads = _uiState.value.downloads.filterNot { it.token == token },
+                    )
+                    return@launch
+                }
+                updateDownloadProgress(token, 100, result.path)
+                _uiState.value = _uiState.value.copy(message = "Saved in Downloads")
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (error: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    message = "Download failed: ${error.message}",
+                    downloads = _uiState.value.downloads.filterNot { it.token == token },
+                )
+            }
+        }
+    }
+
+    fun activeDownloadFor(track: YoutubeTrack): ActiveDownload? =
+        _uiState.value.downloads.firstOrNull { it.token.startsWith("${track.videoId}-") }
+
+    fun clearMessage() {
+        _uiState.value = _uiState.value.copy(message = null)
+    }
+
+    private fun progressPercent(progress: DownloadProgress): Int {
+        if (progress.total <= 0L) return 99
+        return ((progress.downloaded * 100) / progress.total).toInt().coerceIn(0, 99)
+    }
+
+    private fun updateDownloadProgress(token: String, percent: Int, path: String?) {
+        _uiState.value = _uiState.value.copy(
+            downloads = _uiState.value.downloads.map {
+                if (it.token == token) {
+                    it.copy(percent = percent, path = path ?: it.path, done = percent == 100)
+                } else it
+            },
+        )
     }
 
     companion object {

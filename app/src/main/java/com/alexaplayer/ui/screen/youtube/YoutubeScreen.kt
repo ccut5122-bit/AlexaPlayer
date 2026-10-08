@@ -1,12 +1,13 @@
 package com.alexaplayer.ui.screen.youtube
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,13 +17,23 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -33,17 +44,19 @@ import com.alexaplayer.core.designsystem.component.PrimaryButton
 import com.alexaplayer.core.designsystem.theme.AlexaRadius
 import com.alexaplayer.core.designsystem.theme.AlexaSpacing
 import com.alexaplayer.core.util.DurationFormatter
+import com.alexaplayer.data.youtube.ActiveDownload
 import com.alexaplayer.data.youtube.YoutubeSection
 import com.alexaplayer.data.youtube.YoutubeTrack
 import com.alexaplayer.ui.component.AlexaTopBar
 import com.alexaplayer.ui.component.SectionHeader
 import com.alexaplayer.ui.component.SearchField
-import androidx.compose.foundation.layout.BoxScope
 import com.alexaplayer.ui.viewmodel.YoutubeUiState
 
 /**
  * A compact YouTube Music front end. The tab opens on curated, preloaded genre rows
- * (phonk, Hindi, English, ...), and typing a query swaps it for full results.
+ * (phonk, Hindi, English, ...), and typing a query swaps it for full results. Every track
+ * can stream as audio (service background playback) or video (full screen), and can be
+ * downloaded in either container.
  */
 @Composable
 fun YoutubeScreen(
@@ -53,6 +66,8 @@ fun YoutubeScreen(
     onSubmit: () -> Unit,
     onClear: () -> Unit,
     onPlay: (YoutubeTrack) -> Unit,
+    onPlayVideo: (YoutubeTrack) -> Unit,
+    onDownload: (YoutubeTrack, String) -> Unit,
     onOpenGenre: (String) -> Unit,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
@@ -80,13 +95,33 @@ fun YoutubeScreen(
             )
         }
 
+        state.message?.let { message ->
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(
+                    horizontal = AlexaSpacing.md,
+                    vertical = AlexaSpacing.sm,
+                ),
+            )
+        }
+
         if (state.showingResults) {
-            YoutubeResults(state = state, contentPadding = contentPadding, onPlay = onPlay, onRetry = onRetry)
+            YoutubeResults(
+                state = state,
+                contentPadding = contentPadding,
+                onPlay = onPlay,
+                onPlayVideo = onPlayVideo,
+                onDownload = onDownload,
+            )
         } else {
             YoutubeHome(
                 state = state,
                 contentPadding = contentPadding,
                 onPlay = onPlay,
+                onPlayVideo = onPlayVideo,
+                onDownload = onDownload,
                 onOpenGenre = onOpenGenre,
                 onRetry = onRetry,
             )
@@ -99,6 +134,8 @@ private fun YoutubeHome(
     state: YoutubeUiState,
     contentPadding: PaddingValues,
     onPlay: (YoutubeTrack) -> Unit,
+    onPlayVideo: (YoutubeTrack) -> Unit,
+    onDownload: (YoutubeTrack, String) -> Unit,
     onOpenGenre: (String) -> Unit,
     onRetry: () -> Unit,
 ) {
@@ -159,9 +196,12 @@ private fun YoutubeHome(
                         items(section.results, key = { it.videoId }) { track ->
                             YoutubeCard(
                                 track = track,
+                                activeDownload = state.activeDownload(track),
                                 resolving = state.resolvingId == track.videoId,
                                 enabled = state.resolvingId == null,
                                 onClick = { onPlay(track) },
+                                onPlayVideo = { onPlayVideo(track) },
+                                onDownload = { kind -> onDownload(track, kind) },
                             )
                         }
                     }
@@ -187,7 +227,8 @@ private fun YoutubeResults(
     state: YoutubeUiState,
     contentPadding: PaddingValues,
     onPlay: (YoutubeTrack) -> Unit,
-    onRetry: () -> Unit,
+    onPlayVideo: (YoutubeTrack) -> Unit,
+    onDownload: (YoutubeTrack, String) -> Unit,
 ) {
     when {
         state.searching && state.results.isEmpty() -> {
@@ -226,9 +267,12 @@ private fun YoutubeResults(
                 items(state.results, key = { it.videoId }) { track ->
                     YoutubeResultRow(
                         track = track,
+                        activeDownload = state.activeDownload(track),
                         resolving = state.resolvingId == track.videoId,
                         enabled = state.resolvingId == null,
                         onClick = { onPlay(track) },
+                        onPlayVideo = { onPlayVideo(track) },
+                        onDownload = { kind -> onDownload(track, kind) },
                     )
                 }
             }
@@ -239,9 +283,12 @@ private fun YoutubeResults(
 @Composable
 private fun YoutubeCard(
     track: YoutubeTrack,
+    activeDownload: ActiveDownload?,
     resolving: Boolean,
     enabled: Boolean,
     onClick: () -> Unit,
+    onPlayVideo: () -> Unit,
+    onDownload: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -270,6 +317,22 @@ private fun YoutubeCard(
                 DurationBadge(durationMs = track.durationMs)
             }
         }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            SmallActionButton(
+                painterRes = R.drawable.ic_videocam,
+                contentDescription = stringResource(R.string.youtube_play_video),
+                enabled = enabled && activeDownload == null,
+                onClick = onPlayVideo,
+            )
+            if (activeDownload != null) {
+                DownloadProgressIcon(activeDownload = activeDownload)
+            } else {
+                DownloadMenu(onDownload = onDownload)
+            }
+        }
         Text(
             text = track.title,
             style = MaterialTheme.typography.bodyMedium,
@@ -281,25 +344,14 @@ private fun YoutubeCard(
 }
 
 @Composable
-private fun BoxScope.DurationBadge(durationMs: Long) {
-    Text(
-        text = DurationFormatter.format(durationMs),
-        style = MaterialTheme.typography.labelSmall,
-        color = Color.White,
-        modifier = Modifier
-            .align(Alignment.BottomEnd)
-            .padding(4.dp)
-            .background(Color.Black.copy(alpha = 0.7f), shape = RoundedCornerShape(AlexaRadius.md))
-            .padding(horizontal = 4.dp, vertical = 1.dp),
-    )
-}
-
-@Composable
 private fun YoutubeResultRow(
     track: YoutubeTrack,
+    activeDownload: ActiveDownload?,
     resolving: Boolean,
     enabled: Boolean,
     onClick: () -> Unit,
+    onPlayVideo: () -> Unit,
+    onDownload: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -342,10 +394,97 @@ private fun YoutubeResultRow(
             )
         }
 
+        if (activeDownload != null) {
+            DownloadProgressIcon(activeDownload = activeDownload)
+        } else {
+            if (resolving) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(22.dp),
+                    strokeWidth = 2.dp,
+                )
+            }
+            IconButton(onClick = onPlayVideo) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_videocam),
+                    contentDescription = stringResource(R.string.youtube_play_video),
+                )
+            }
+            DownloadMenu(onDownload = onDownload)
+        }
+    }
+}
+
+/** A small flat icon button for the trailing row of a track. */
+@Composable
+private fun RowScope.SmallActionButton(
+    painterRes: Int,
+    contentDescription: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(36.dp)) {
+        Icon(
+            painter = painterResource(painterRes),
+            contentDescription = contentDescription,
+            modifier = Modifier.size(18.dp),
+        )
+    }
+}
+
+@Composable
+private fun DownloadProgressIcon(activeDownload: ActiveDownload) {
+    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(36.dp)) {
         CircularProgressIndicator(
-            modifier = Modifier
-                .size(if (resolving) 22.dp else 0.dp),
+            progress = { activeDownload.percent / 100f },
+            modifier = Modifier.size(18.dp),
             strokeWidth = 2.dp,
         )
     }
 }
+
+/** Dropdown with "Download audio" / "Download video"; triggered by the download icon. */
+@Composable
+private fun DownloadMenu(onDownload: (String) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { open = true }) {
+            Icon(
+                painter = painterResource(R.drawable.ic_download),
+                contentDescription = stringResource(R.string.youtube_download),
+            )
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.youtube_download_audio)) },
+                onClick = {
+                    open = false
+                    onDownload("audio")
+                },
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.youtube_download_video)) },
+                onClick = {
+                    open = false
+                    onDownload("video")
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun BoxScope.DurationBadge(durationMs: Long) {
+    Text(
+        text = DurationFormatter.format(durationMs),
+        style = MaterialTheme.typography.labelSmall,
+        color = Color.White,
+        modifier = Modifier
+            .align(Alignment.BottomEnd)
+            .padding(4.dp)
+            .background(Color.Black.copy(alpha = 0.7f), shape = RoundedCornerShape(AlexaRadius.md))
+            .padding(horizontal = 4.dp, vertical = 1.dp),
+    )
+}
+
+private fun YoutubeUiState.activeDownload(track: YoutubeTrack): ActiveDownload? =
+    downloads.firstOrNull { it.token.startsWith("${track.videoId}-") }
