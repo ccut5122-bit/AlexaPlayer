@@ -71,9 +71,8 @@ def _fresh_opts(base_format=None):
     opts = dict(_OPTS)
     if base_format:
         opts["format"] = base_format
-    opts["http_headers"] = dict(
-        opts.get("http_headers") or {}, User-Agent=device["ua"]
-    )
+    opts["http_headers"] = dict(opts.get("http_headers") or {})
+    opts["http_headers"]["User-Agent"] = device["ua"]
     opts["extractor_args"] = {
         "youtube": ["player_client=%s" % device["client"]],
     }
