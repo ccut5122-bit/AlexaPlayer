@@ -147,6 +147,7 @@ fun AlexaPlayerNavHost(container: AppContainer, modifier: Modifier = Modifier) {
             }
 
             composable(Routes.YOUTUBE) {
+                val context = LocalContext.current
                 val vm: YoutubeViewModel = viewModel(factory = YoutubeViewModel.factory(container))
                 val state by vm.uiState.collectAsStateWithLifecycle()
                 YoutubeScreen(
@@ -162,7 +163,6 @@ fun AlexaPlayerNavHost(container: AppContainer, modifier: Modifier = Modifier) {
                     onRetry = vm::retry,
                     onPlayVideo = { track ->
                         vm.playVideo(track) { url, title ->
-                            val context = LocalContext.current
                             context.startActivity(
                                 VideoPlayerActivity.intent(context, url, title),
                             )

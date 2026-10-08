@@ -45,11 +45,11 @@ import com.alexaplayer.core.designsystem.theme.AlexaRadius
 import com.alexaplayer.core.designsystem.theme.AlexaSpacing
 import com.alexaplayer.core.util.DurationFormatter
 import com.alexaplayer.data.youtube.ActiveDownload
-import com.alexaplayer.data.youtube.YoutubeSection
 import com.alexaplayer.data.youtube.YoutubeTrack
 import com.alexaplayer.ui.component.AlexaTopBar
 import com.alexaplayer.ui.component.SectionHeader
 import com.alexaplayer.ui.component.SearchField
+import com.alexaplayer.ui.viewmodel.YoutubeSection
 import com.alexaplayer.ui.viewmodel.YoutubeUiState
 
 /**
@@ -114,6 +114,7 @@ fun YoutubeScreen(
                 onPlay = onPlay,
                 onPlayVideo = onPlayVideo,
                 onDownload = onDownload,
+                onRetry = onRetry,
             )
         } else {
             YoutubeHome(
@@ -229,6 +230,7 @@ private fun YoutubeResults(
     onPlay: (YoutubeTrack) -> Unit,
     onPlayVideo: (YoutubeTrack) -> Unit,
     onDownload: (YoutubeTrack, String) -> Unit,
+    onRetry: () -> Unit,
 ) {
     when {
         state.searching && state.results.isEmpty() -> {

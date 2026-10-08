@@ -63,18 +63,23 @@ data class ActiveDownload(
  * changes every few months), Kotlin only ever sees JSON, so a yt-dlp upgrade can never
  * break a Compose signature.
  */
-class YoutubeBridge(appContext: Context) {
+class YoutubeBridge(context: Context) {
+
+    private val appContext: Context = context.applicationContext
 
     /**
      * The runtime has to sit on the Android platform before py objects exist; without this
-     * Chaquopy throws "Cannot use Generic Platform on Android". Started once, lazily, on
-     * whatever thread first touches the bridge.
+     * Chaquopy throws "Cannot use Generic Platform on Android". Initialised unconditionally,
+     * with explicit types (Chaquopy's generic getModule needs the target type spelled out,
+     * otherwise Kotlin can't infer it inside a lazy initializer).
      */
-    private val python by lazy {
-        Python.start(AndroidPlatform(appContext.applicationContext))
-    }
+    private val python: Python
+    private val module: com.chaquo.python.PyObject
 
-    private val module by lazy { python.getModule("ytmusic") }
+    init {
+        python = Python.start(AndroidPlatform(appContext))
+        module = python.getModule<com.chaquo.python.PyObject>("ytmusic")
+    }
 
     suspend fun search(query: String, limit: Int = 25): List<YoutubeTrack> =
         withContext(Dispatchers.IO) {
