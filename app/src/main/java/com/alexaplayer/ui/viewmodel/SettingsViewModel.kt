@@ -42,6 +42,9 @@ class SettingsViewModel(
     fun setMediaNotificationEnabled(enabled: Boolean) =
         edit { settingsRepository.setMediaNotificationEnabled(enabled) }
 
+    fun setVideoQuality(height: Int) =
+        edit { settingsRepository.setVideoQuality(height) }
+
     private fun edit(block: suspend () -> Unit) {
         viewModelScope.launch { block() }
     }

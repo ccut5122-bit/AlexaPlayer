@@ -19,6 +19,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /** One horizontal carousel: a title plus the tracks behind it. */
@@ -58,6 +59,7 @@ private data class HomeFeed(
 
 class YoutubeViewModel(
     private val bridge: YoutubeBridge,
+    private val settingsRepository: com.alexaplayer.data.prefs.SettingsRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(YoutubeUiState())
@@ -184,7 +186,7 @@ class YoutubeViewModel(
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(resolvingId = track.videoId, error = null)
             try {
-                onReady(bridge.toSong(bridge.resolve(track.videoId)))
+                onReady(bridge.toSong(bridge.resolve(track.videoId, videoHeight())))
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (error: Exception) {
@@ -204,7 +206,7 @@ class YoutubeViewModel(
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(resolvingId = track.videoId, error = null)
             try {
-                onReady(bridge.resolveVideo(track.videoId).url, track.title)
+                onReady(bridge.resolveVideo(track.videoId, videoHeight()).url, track.title)
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (error: Exception) {
@@ -230,7 +232,7 @@ class YoutubeViewModel(
         )
         viewModelScope.launch {
             val downloadAsync = async(Dispatchers.IO) {
-                bridge.download(track.videoId, kind, token)
+                bridge.download(track.videoId, kind, token, videoHeight())
             }
             try {
                 while (downloadAsync.isActive) {
@@ -264,6 +266,9 @@ class YoutubeViewModel(
         _uiState.value = _uiState.value.copy(message = null)
     }
 
+    /** Resolution cap (480/720/1080/2160) chosen in Settings, used for streams + downloads. */
+    private suspend fun videoHeight(): Int = settingsRepository.settings.first().videoQuality
+
     private fun progressPercent(progress: DownloadProgress): Int {
         if (progress.total <= 0L) return 99
         return ((progress.downloaded * 100) / progress.total).toInt().coerceIn(0, 99)
@@ -296,7 +301,10 @@ class YoutubeViewModel(
     companion object {
         fun factory(container: AppContainer): ViewModelProvider.Factory = viewModelFactory {
             initializer {
-                YoutubeViewModel(bridge = container.youtubeBridge)
+                YoutubeViewModel(
+                    bridge = container.youtubeBridge,
+                    settingsRepository = container.settingsRepository,
+                )
             }
         }
     }

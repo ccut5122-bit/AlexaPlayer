@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -27,6 +28,8 @@ data class Settings(
     val audioFocusBehaviour: AudioFocusBehaviour = AudioFocusBehaviour.PAUSE,
     val sortOrder: SortOrder = SortOrder.TITLE,
     val mediaNotificationEnabled: Boolean = true,
+    /** Max resolution used when a stream has video (480/720/1080/2160). */
+    val videoQuality: Int = 720,
     val excludedFolders: Set<String> = emptySet(),
 )
 
@@ -55,6 +58,7 @@ class SettingsRepository(context: Context) {
                 audioFocusBehaviour = AudioFocusBehaviour.fromKey(prefs[KEY_AUDIO_FOCUS]),
                 sortOrder = SortOrder.fromKey(prefs[KEY_SORT_ORDER]),
                 mediaNotificationEnabled = prefs[KEY_NOTIFICATION] ?: true,
+                videoQuality = prefs[KEY_VIDEO_QUALITY] ?: 720,
                 excludedFolders = prefs[KEY_EXCLUDED_FOLDERS] ?: emptySet(),
             )
         }
@@ -75,6 +79,8 @@ class SettingsRepository(context: Context) {
 
     suspend fun setMediaNotificationEnabled(enabled: Boolean) = edit { it[KEY_NOTIFICATION] = enabled }
 
+    suspend fun setVideoQuality(height: Int) = edit { it[KEY_VIDEO_QUALITY] = height }
+
     suspend fun setExcludedFolders(folders: Set<String>) = edit { it[KEY_EXCLUDED_FOLDERS] = folders }
 
     private suspend fun edit(block: (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
@@ -94,6 +100,7 @@ class SettingsRepository(context: Context) {
         val KEY_AUDIO_FOCUS = stringPreferencesKey("audio_focus")
         val KEY_SORT_ORDER = stringPreferencesKey("sort_order")
         val KEY_NOTIFICATION = booleanPreferencesKey("media_notification")
+        val KEY_VIDEO_QUALITY = intPreferencesKey("video_quality")
         val KEY_EXCLUDED_FOLDERS = stringSetPreferencesKey("excluded_folders")
     }
 }

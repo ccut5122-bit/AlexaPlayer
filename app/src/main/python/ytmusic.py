@@ -61,6 +61,26 @@ _OPTS = {
     "format": "bestaudio/best",
 }
 
+# YouTube blocks some clients for some videos ("Requested format is not available" is the
+# usual symptom). Trying the whole ladder underneath keeps playback alive in practice.
+_CLIENTS = ["android_vr", "ios", "android", "web_music", "tv", "mweb", "web"]
+
+# Stream URLs stay valid for a while; cache them so replaying a song is instant instead
+# of another slow round trip to the extractor.
+_RESOLVE_CACHE = {}
+_RESOLVE_TTL = 900  # 15 minutes
+
+
+def _cap_format(height):
+    """The most specific height-capped muxed format selector for the given resolution."""
+    if height >= 2160:
+        return "best[height<=2160]/best"
+    if height >= 1080:
+        return "best[height<=1080]/best"
+    if height >= 720:
+        return "best[height<=720]/best"
+    return "best[height<=480]/best"
+
 
 def _device_opts(base_format=None):
     """Options with a randomly picked device UA; used for streams, not search."""
@@ -142,11 +162,16 @@ def search(query, limit=25):
 
 
 def _stream(target, base_format):
-    """Pull a playable stream URL + headers, falling back to more permissive formats so a
-    single client's "Requested format is not available" never kills playback."""
+    """Pull a playable stream URL + headers. Falls back through more permissive format
+    selectors AND the whole player-client ladder, so a single client's "Requested format
+    is not available" never kills playback."""
 
     def job():
         import yt_dlp
+
+        def attempt(opts, target_url):
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                return ydl.extract_info(target_url, download=False)
 
         target_url = str(target)
         if not target_url.startswith(("http://", "https://")):
@@ -154,14 +179,18 @@ def _stream(target, base_format):
 
         info = None
         last_error = None
-        for fmt in (base_format, "best"):
-            opts = dict(_device_opts(fmt), extract_flat=False)
-            try:
-                with yt_dlp.YoutubeDL(opts) as ydl:
-                    info = ydl.extract_info(target_url, download=False)
+        for fmt in (base_format, "best", "18"):
+            for client in _CLIENTS:
+                opts = dict(_device_opts(fmt), extract_flat=False)
+                opts["extractor_args"] = {"youtube": {"player_client": [client]}}
+                try:
+                    info = attempt(opts, target_url)
+                except Exception as exc:  # noqa: BLE001 - try the next client/format
+                    last_error = exc
+                    continue
                 break
-            except Exception as exc:  # noqa: BLE001
-                last_error = exc
+            if info is not None:
+                break
 
         if info is None:
             raise RuntimeError("No playable stream (%s)" % (last_error or "unknown"))
@@ -194,18 +223,29 @@ def _stream(target, base_format):
     return _run(job)
 
 
-def resolve(video_id, video_url=None):
-    """Return a playable muxed (audio+video) URL capped at 720p, plus the headers Media3
-    needs to fetch it. Music gets its audio from the muxed stream, and the in-app player
-    can attach a surface to the same stream to render the video when the song has one."""
+def resolve(video_id, max_height=720, video_url=None):
+    """Return a playable muxed (audio+video) stream up to [max_height], plus the headers
+    Media3 needs to fetch it. Music gets its audio from the muxed stream, and the in-app
+    player can attach a surface to the same stream to render the video when it has one.
+    Answers from the short-lived cache make replays instant."""
+    key = "v:%d:%s" % (int(max_height), str(video_id))
+    hit = _RESOLVE_CACHE.get(key)
+    if hit is not None and time.time() - hit[0] < _RESOLVE_TTL:
+        return json.dumps(hit[1])
+
     target = video_url or "https://www.youtube.com/watch?v=%s" % video_id
-    return _stream(target, "best[height<=720]/best")
+    payload = json.loads(_stream(target, _cap_format(int(max_height))))
+    if payload.get("url"):
+        _RESOLVE_CACHE[key] = [time.time(), payload]
+        if len(_RESOLVE_CACHE) > 32:
+            _RESOLVE_CACHE.pop(next(iter(_RESOLVE_CACHE)))
+    return json.dumps(payload)
 
 
-def resolve_video(video_id, video_url=None):
-    """Return a playable muxed (audio+video) URL for full-screen playback."""
+def resolve_video(video_id, max_height=1080, video_url=None):
+    """A muxed stream for the full-screen player, honouring the chosen resolution."""
     target = video_url or "https://www.youtube.com/watch?v=%s" % video_id
-    return _stream(target, "best[height<=1080]/best")
+    return _stream(target, _cap_format(int(max_height)))
 
 
 def download_progress(token):
@@ -213,36 +253,50 @@ def download_progress(token):
     return json.dumps(_PROGRESS.get(str(token)) or {"status": "unknown"})
 
 
-def download(video_id, kind, token, outdir):
+def download(video_id, kind, token, outdir, max_height=720):
     """Download a song (kind=audio) or a video (kind=video) into outdir, reporting
     byte-level progress on _PROGRESS. The calling (Kotlin) side moves the result into
-    public storage afterwards."""
+    public storage afterwards.
+
+    Video uses single-file mp4 formats only, because there is no ffmpeg on the device to
+    merge separate video+audio tracks; it falls back across the whole client ladder."""
 
     def job():
         import yt_dlp
 
         if kind == "video":
-            formats = ("best[height<=1080]/best", "best", "18")
+            cap = int(max_height)
+            formats = (
+                "best[height<=%d][ext=mp4]" % cap,
+                "best[ext=mp4]",
+                "18",
+                "best",
+            )
         else:
             formats = ("bestaudio/best", "bestaudio", "best")
-        url = "https://www.youtube.com/watch?v=%s" % video_id
 
+        url = "https://www.youtube.com/watch?v=%s" % video_id
         info = None
         last_error = None
         for fmt in formats:
-            opts = dict(
-                _device_opts(fmt),
-                skip_download=False,
-                outtmpl=os.path.join(str(outdir), "%(title).120s-%(id)s.%(ext)s"),
-                progress_hooks=[_progress_hook(str(token))],
-            )
-            try:
-                with yt_dlp.YoutubeDL(opts) as ydl:
-                    info = ydl.extract_info(url, download=True)
+            for client in _CLIENTS:
+                opts = dict(
+                    _device_opts(fmt),
+                    skip_download=False,
+                    outtmpl=os.path.join(str(outdir), "%(title).120s-%(id)s.%(ext)s"),
+                    progress_hooks=[_progress_hook(str(token))],
+                )
+                opts["extractor_args"] = {"youtube": {"player_client": [client]}}
+                try:
+                    with yt_dlp.YoutubeDL(opts) as ydl:
+                        info = ydl.extract_info(url, download=True)
+                except Exception as exc:  # noqa: BLE001 - try the next client/format
+                    _PROGRESS[str(token)] = {"status": "error", "error": str(exc)}
+                    last_error = exc
+                    continue
                 break
-            except Exception as exc:  # noqa: BLE001 - try the next, more permissive format
-                _PROGRESS[str(token)] = {"status": "error", "error": str(exc)}
-                last_error = exc
+            if info is not None:
+                break
 
         if info is None:
             raise RuntimeError("Download failed (%s)" % (last_error or "unknown"))

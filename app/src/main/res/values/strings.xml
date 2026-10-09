@@ -221,6 +221,8 @@
     <string name="settings_folders_summary">%1$d folders included</string>
     <string name="settings_notification">Media notification</string>
     <string name="settings_notification_summary">Show playback controls in the notification shade.</string>
+    <string name="settings_video_quality">Video quality</string>
+    <string name="settings_video_quality_summary">Max resolution for streams and video downloads.</string>
     <string name="settings_notification_blocked">Notifications are turned off for Alexa Player.</string>
     <string name="settings_notification_open_settings">Open settings</string>
     <string name="settings_version">Version</string>

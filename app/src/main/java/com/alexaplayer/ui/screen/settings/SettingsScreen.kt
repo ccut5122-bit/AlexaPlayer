@@ -45,6 +45,7 @@ fun SettingsScreen(
     onResumePlayback: (Boolean) -> Unit,
     onAudioFocus: (AudioFocusBehaviour) -> Unit,
     onNotification: (Boolean) -> Unit,
+    onVideoQuality: (Int) -> Unit,
     onOpenAbout: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -167,6 +168,30 @@ fun SettingsScreen(
                     checked = settings.mediaNotificationEnabled,
                     onCheckedChange = onNotification,
                 )
+            }
+
+            item(key = "video_quality") {
+                Column(modifier = Modifier.padding(horizontal = AlexaSpacing.lg)) {
+                    Text(
+                        text = stringResource(R.string.settings_video_quality),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    Text(
+                        text = stringResource(R.string.settings_video_quality_summary),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = AlexaSpacing.sm),
+                    )
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(AlexaSpacing.sm)) {
+                        items(VIDEO_QUALITIES) { height ->
+                            ThemeChip(
+                                label = "$height" + "p",
+                                selected = settings.videoQuality == height,
+                                onClick = { onVideoQuality(height) },
+                            )
+                        }
+                    }
+                }
             }
 
             item(key = "about_header") {

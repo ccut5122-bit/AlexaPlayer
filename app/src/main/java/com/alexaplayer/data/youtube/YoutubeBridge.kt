@@ -117,9 +117,9 @@ class YoutubeBridge(context: Context) {
             SearchOutcome(results = tracks, note = payload.optString("note"))
         }
 
-    suspend fun resolve(videoId: String): ResolvedStream =
+    suspend fun resolve(videoId: String, maxHeight: Int): ResolvedStream =
         withContext(Dispatchers.IO) {
-            val payload = JSONObject(call("resolve", videoId))
+            val payload = JSONObject(call("resolve", videoId, maxHeight))
             val error = payload.optString("error")
             if (error.isNotEmpty()) throw YoutubeException(error)
 
@@ -137,9 +137,9 @@ class YoutubeBridge(context: Context) {
         }
 
     /** Video songs play as a muxed mp4, streamed into the full-screen player. */
-    suspend fun resolveVideo(videoId: String): ResolvedStream =
+    suspend fun resolveVideo(videoId: String, maxHeight: Int): ResolvedStream =
         withContext(Dispatchers.IO) {
-            val payload = JSONObject(call("resolve_video", videoId))
+            val payload = JSONObject(call("resolve_video", videoId, maxHeight))
             val error = payload.optString("error")
             if (error.isNotEmpty()) throw YoutubeException(error)
 
@@ -164,10 +164,10 @@ class YoutubeBridge(context: Context) {
     private val tempDownloadDir: java.io.File
         get() = java.io.File(appContext.applicationContext.cacheDir, "downloads")
 
-    suspend fun download(videoId: String, kind: String, token: String): DownloadResult =
+    suspend fun download(videoId: String, kind: String, token: String, maxHeight: Int): DownloadResult =
         withContext(Dispatchers.IO) {
             tempDownloadDir.mkdirs()
-            val payload = JSONObject(call("download", videoId, kind, token, tempDownloadDir.absolutePath))
+            val payload = JSONObject(call("download", videoId, kind, token, tempDownloadDir.absolutePath, maxHeight))
             val error = payload.optString("error")
             if (error.isNotEmpty()) throw YoutubeException(error)
 

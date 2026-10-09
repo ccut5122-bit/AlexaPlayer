@@ -72,7 +72,6 @@ fun NowPlayingScreen(
     onPlayUpNext: (Int) -> Unit,
     errorText: String?,
     playerProvider: () -> Player?,
-    videoActive: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val extended = AlexaTheme.extended
@@ -143,7 +142,7 @@ fun NowPlayingScreen(
                             modifier = Modifier.fillMaxSize(),
                         )
                         if (song.isStream) {
-                            VideoSurface(playerProvider, visible = videoActive)
+                            VideoSurface(playerProvider)
                         }
                     }
                 }
@@ -374,7 +373,7 @@ private const val UP_NEXT_PREVIEW = 5
  * without rendering video.
  */
 @Composable
-private fun VideoSurface(playerProvider: () -> Player?, visible: Boolean) {
+private fun VideoSurface(playerProvider: () -> Player?) {
     AndroidView(
         factory = { ctx ->
             PlayerView(ctx).apply {
@@ -382,10 +381,7 @@ private fun VideoSurface(playerProvider: () -> Player?, visible: Boolean) {
                 resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
             }
         },
-        update = { view ->
-            view.visibility = if (visible) android.view.View.VISIBLE else android.view.View.GONE
-            view.player = if (visible) playerProvider() else null
-        },
+        update = { view -> view.player = playerProvider() },
         onRelease = { it.player = null },
     )
 }

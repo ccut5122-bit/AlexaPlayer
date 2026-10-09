@@ -11,8 +11,11 @@ import com.alexaplayer.data.repository.LibraryRepository
 import com.alexaplayer.di.AppContainer
 import com.alexaplayer.playback.PlayerConnection
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -60,7 +63,12 @@ class RootViewModel(
 
     fun openSong(songs: List<Song>, index: Int) {
         playerConnection.play(PlaybackRequest(songs = songs, startIndex = index))
+        _openPlayer.tryEmit(Unit)
     }
+
+    /** Fires when a track starts so the UI can raise the full player, YouTube-style. */
+    private val _openPlayer = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val openPlayer: SharedFlow<Unit> = _openPlayer.asSharedFlow()
 
     fun togglePlayPause() = playerConnection.togglePlayPause()
 

@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -76,7 +77,6 @@ fun AlexaPlayerNavHost(container: AppContainer, modifier: Modifier = Modifier) {
     val rootViewModel: RootViewModel = viewModel(factory = RootViewModel.factory(container))
     val miniPlayer by rootViewModel.miniPlayer.collectAsStateWithLifecycle()
     val playback by container.playerConnection.state.collectAsStateWithLifecycle()
-    val videoActive by container.playerConnection.videoActive.collectAsStateWithLifecycle()
     val currentSongId = playback.currentSongId
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
@@ -86,6 +86,15 @@ fun AlexaPlayerNavHost(container: AppContainer, modifier: Modifier = Modifier) {
     var playlistPickerFor by rememberSaveable { mutableStateOf<Long?>(null) }
     var pickerSelection by remember { mutableStateOf<Set<Long>>(emptySet()) }
     val scope = rememberCoroutineScope()
+
+    // Starting any song raises the full player automatically, the way YouTube does.
+    LaunchedEffect(rootViewModel) {
+        rootViewModel.openPlayer.collect {
+            if (navController.currentBackStackEntry?.destination?.route != Routes.NOW_PLAYING) {
+                navController.navigate(Routes.NOW_PLAYING)
+            }
+        }
+    }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -451,7 +460,6 @@ fun AlexaPlayerNavHost(container: AppContainer, modifier: Modifier = Modifier) {
                     onPlayUpNext = vm::playUpNextIndex,
                     errorText = if (errorRes == 0) null else stringResource(errorRes),
                     playerProvider = { container.playerConnection.player },
-                    videoActive = videoActive,
                 )
             }
 
@@ -470,6 +478,7 @@ fun AlexaPlayerNavHost(container: AppContainer, modifier: Modifier = Modifier) {
                     onResumePlayback = vm::setResumePlayback,
                     onAudioFocus = vm::setAudioFocusBehaviour,
                     onNotification = vm::setMediaNotificationEnabled,
+                    onVideoQuality = vm::setVideoQuality,
                     onOpenAbout = { showAbout = true },
                 )
 
