@@ -56,6 +56,7 @@ data class ActiveDownload(
     val percent: Int,
     val done: Boolean,
     val path: String? = null,
+    val failed: Boolean = false,
 )
 
 /**

@@ -83,12 +83,11 @@ class YoutubeViewModel(
                 HomeFeed("Hindi Hits", "top hindi songs"),
                 HomeFeed("English Pop", "english pop songs"),
                 HomeFeed("Arijit Singh", "arijit singh songs"),
-                HomeFeed("LoFi Chill", "lofi chill songs"),
             )
             val jobs = feeds.map { feed ->
                 async {
                     try {
-                        feed to bridge.search(feed.query, limit = 15)
+                        feed to bridge.search(feed.query, limit = 12)
                     } catch (cancellation: CancellationException) {
                         throw cancellation
                     } catch (error: Exception) {
@@ -208,16 +207,12 @@ class YoutubeViewModel(
      * separate IO thread while this coroutine polls the bridge until it reports finished.
      */
     fun startDownload(track: YoutubeTrack, kind: String) {
-        if (_uiState.value.downloads.any { it.token.startsWith("${track.videoId}-") }) return
+        val existing = _uiState.value.downloads.firstOrNull { it.token.startsWith("${track.videoId}-") }
+        if (existing != null && !existing.failed) return
         val token = "${track.videoId}-${kind}-${System.currentTimeMillis()}"
         _uiState.value = _uiState.value.copy(
-            downloads = _uiState.value.downloads + ActiveDownload(
-                token = token,
-                kind = kind,
-                title = track.title,
-                percent = 0,
-                done = false,
-            ),
+            downloads = _uiState.value.downloads.filterNot { it.token.startsWith("${track.videoId}-") } +
+                ActiveDownload(token = token, kind = kind, title = track.title, percent = 0, done = false),
             message = null,
         )
         viewModelScope.launch {
@@ -230,27 +225,21 @@ class YoutubeViewModel(
                     val snapshot = bridge.downloadProgress(token)
                     when (snapshot.status) {
                         "finished", "error" -> break
-                        else -> updateDownloadProgress(token, progressPercent(snapshot), snapshot.path)
+                        else -> updateDownloadProgress(token, progressPercent(snapshot), snapshot.path, failed = false)
                     }
                 }
                 val result = try {
                     downloadAsync.await()
                 } catch (error: Exception) {
-                    _uiState.value = _uiState.value.copy(
-                        message = "Download failed: ${error.message}",
-                        downloads = _uiState.value.downloads.filterNot { it.token == token },
-                    )
+                    markDownloadFailed(token, error.message ?: "Download failed")
                     return@launch
                 }
-                updateDownloadProgress(token, 100, result.path)
+                updateDownloadProgress(token, 100, result.path, failed = false, done = true)
                 _uiState.value = _uiState.value.copy(message = "Saved in Downloads")
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (error: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    message = "Download failed: ${error.message}",
-                    downloads = _uiState.value.downloads.filterNot { it.token == token },
-                )
+                markDownloadFailed(token, error.message ?: "Download failed")
             }
         }
     }
@@ -267,12 +256,26 @@ class YoutubeViewModel(
         return ((progress.downloaded * 100) / progress.total).toInt().coerceIn(0, 99)
     }
 
-    private fun updateDownloadProgress(token: String, percent: Int, path: String?) {
+    private fun updateDownloadProgress(token: String, percent: Int, path: String?, failed: Boolean, done: Boolean? = null) {
         _uiState.value = _uiState.value.copy(
             downloads = _uiState.value.downloads.map {
                 if (it.token == token) {
-                    it.copy(percent = percent, path = path ?: it.path, done = percent == 100)
+                    it.copy(
+                        percent = percent,
+                        path = path ?: it.path,
+                        failed = failed,
+                        done = done ?: (percent == 100),
+                    )
                 } else it
+            },
+        )
+    }
+
+    private fun markDownloadFailed(token: String, message: String) {
+        _uiState.value = _uiState.value.copy(
+            message = message,
+            downloads = _uiState.value.downloads.map {
+                if (it.token == token) it.copy(failed = true, done = false, percent = it.percent) else it
             },
         )
     }

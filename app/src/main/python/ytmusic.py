@@ -55,10 +55,10 @@ _OPTS = {
     "no_warnings": True,
     "noplaylist": True,
     "cachedir": False,
-    "socket_timeout": 15,
-    "retries": 2,
-    "extractor_retries": 3,
-    "sleep_interval_requests": 1,
+    "socket_timeout": 10,
+    "retries": 1,
+    "extractor_retries": 2,
+    "sleep_interval_requests": 0.5,
     "geo_bypass": True,
     # Media3 only needs one clean audio stream; muxed video would just waste data.
     "format": "bestaudio[ext=m4a]/bestaudio/best",
@@ -130,12 +130,15 @@ def _stream(target, base_format):
     def job():
         import yt_dlp
 
-        if not str(target).startswith(("http://", "https://")):
-            target = "https://www.youtube.com/watch?v=%s" % target
+        # Must not rebind `target` here - Python would treat it as local and this raises
+        # "cannot access local variable 'target'" (UnboundLocalError). Read into a fresh name.
+        target_url = str(target)
+        if not target_url.startswith(("http://", "https://")):
+            target_url = "https://www.youtube.com/watch?v=%s" % target_url
 
         opts = dict(_fresh_opts(base_format), extract_flat=False)
         with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(target, download=False)
+            info = ydl.extract_info(target_url, download=False)
 
         fmt = info.get("requested_formats") or []
         pick = next(

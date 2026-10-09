@@ -396,23 +396,22 @@ private fun YoutubeResultRow(
             )
         }
 
-        if (activeDownload != null) {
-            DownloadProgressIcon(activeDownload = activeDownload)
-        } else {
-            if (resolving) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(22.dp),
-                    strokeWidth = 2.dp,
-                )
-            }
-            IconButton(onClick = onPlayVideo) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_videocam),
-                    contentDescription = stringResource(R.string.youtube_play_video),
-                )
-            }
-            DownloadMenu(onDownload = onDownload)
+        if (resolving) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(22.dp),
+                strokeWidth = 2.dp,
+            )
         }
+        IconButton(onClick = onPlayVideo, enabled = activeDownload == null) {
+            Icon(
+                painter = painterResource(R.drawable.ic_videocam),
+                contentDescription = stringResource(R.string.youtube_play_video),
+            )
+        }
+        DownloadBadge(
+            activeDownload = activeDownload,
+            onDownload = onDownload,
+        )
     }
 }
 
@@ -433,14 +432,47 @@ private fun RowScope.SmallActionButton(
     }
 }
 
+/**
+ * Per-track download indicator: running ring with percent, green tick when finished, a red
+ * warning (tap to retry) when it failed, and the audio/video menu before anything started.
+ */
 @Composable
-private fun DownloadProgressIcon(activeDownload: ActiveDownload) {
-    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(36.dp)) {
-        CircularProgressIndicator(
-            progress = { activeDownload.percent / 100f },
-            modifier = Modifier.size(18.dp),
-            strokeWidth = 2.dp,
-        )
+private fun DownloadBadge(
+    activeDownload: ActiveDownload?,
+    onDownload: (String) -> Unit,
+) {
+    when {
+        activeDownload == null -> DownloadMenu(onDownload = onDownload)
+
+        activeDownload.failed -> {
+            IconButton(onClick = { onDownload(activeDownload.kind) }) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_warning),
+                    contentDescription = stringResource(R.string.youtube_download_failed),
+                    tint = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
+
+        activeDownload.done -> {
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(36.dp)) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_check),
+                    contentDescription = stringResource(R.string.youtube_download_done),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+
+        else -> {
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(36.dp)) {
+                CircularProgressIndicator(
+                    progress = { activeDownload.percent / 100f },
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp,
+                )
+            }
+        }
     }
 }
 
