@@ -329,11 +329,10 @@ private fun YoutubeCard(
                 enabled = enabled && activeDownload == null,
                 onClick = onPlayVideo,
             )
-            if (activeDownload != null) {
-                DownloadProgressIcon(activeDownload = activeDownload)
-            } else {
-                DownloadMenu(onDownload = onDownload)
-            }
+            DownloadBadge(
+                activeDownload = activeDownload,
+                onDownload = onDownload,
+            )
         }
         Text(
             text = track.title,
