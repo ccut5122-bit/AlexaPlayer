@@ -159,7 +159,13 @@ class YoutubeViewModel(
     }
 
     fun retry() {
-        if (_uiState.value.showingResults) submit() else loadHome()
+        if (_uiState.value.showingResults) {
+            submit()
+        } else {
+            homeLoaded = false
+            _uiState.value = _uiState.value.copy(sections = emptyList(), homeError = null)
+            loadHome()
+        }
     }
 
     /**

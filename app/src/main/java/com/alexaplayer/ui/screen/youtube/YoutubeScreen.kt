@@ -182,10 +182,17 @@ private fun YoutubeHome(
             } else if (section.results.isEmpty()) {
                 item(key = "empty_${section.query}") {
                     Text(
-                        text = section.error ?: stringResource(R.string.youtube_section_empty),
+                        text = buildString {
+                            append(section.error ?: stringResource(R.string.youtube_section_empty))
+                            append("  ")
+                            append("·  ")
+                            append(stringResource(R.string.youtube_retry))
+                        },
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = AlexaSpacing.md, vertical = AlexaSpacing.sm),
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .clickable(onClick = onRetry)
+                            .padding(horizontal = AlexaSpacing.md, vertical = AlexaSpacing.sm),
                     )
                 }
             } else {
@@ -454,21 +461,27 @@ private fun DownloadBadge(
         }
 
         activeDownload.done -> {
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(36.dp)) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.size(36.dp)) {
                 Icon(
                     painter = painterResource(R.drawable.ic_check),
                     contentDescription = stringResource(R.string.youtube_download_done),
                     tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(22.dp),
                 )
             }
         }
 
         else -> {
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(36.dp)) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.size(40.dp)) {
                 CircularProgressIndicator(
                     progress = { activeDownload.percent / 100f },
-                    modifier = Modifier.size(18.dp),
-                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.5.dp,
+                )
+                Text(
+                    text = "${activeDownload.percent}%",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
                 )
             }
         }

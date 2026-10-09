@@ -61,7 +61,7 @@ _OPTS = {
     "sleep_interval_requests": 0.5,
     "geo_bypass": True,
     # Media3 only needs one clean audio stream; muxed video would just waste data.
-    "format": "bestaudio[ext=m4a]/bestaudio/best",
+    "format": "bestaudio/best",
 }
 
 
@@ -73,9 +73,6 @@ def _fresh_opts(base_format=None):
         opts["format"] = base_format
     opts["http_headers"] = dict(opts.get("http_headers") or {})
     opts["http_headers"]["User-Agent"] = device["ua"]
-    opts["extractor_args"] = {
-        "youtube": ["player_client=%s" % device["client"]],
-    }
     return opts
 
 
@@ -171,12 +168,12 @@ def _stream(target, base_format):
 def resolve(video_id, video_url=None):
     """Return the playable audio URL plus the headers Media3 needs to fetch it."""
     target = video_url or "https://www.youtube.com/watch?v=%s" % video_id
-    return _stream(target, "bestaudio[ext=m4a]/bestaudio/best")
+    return _stream(target, "bestaudio/best")
 
 def resolve_video(video_id, video_url=None):
     """Return a playable muxed (audio+video) URL for full-screen playback."""
     target = video_url or "https://www.youtube.com/watch?v=%s" % video_id
-    return _stream(target, "best[height<=1080][ext=mp4]/best[ext=mp4]/best")
+    return _stream(target, "best[height<=1080]/best[ext=mp4]/best")
 
 
 def download_progress(token):
@@ -191,10 +188,10 @@ def download(video_id, kind, token, outdir):
         import yt_dlp
 
         if kind == "video":
-            base_format = "best[height<=1080][ext=mp4]/best[ext=mp4]/best"
+            base_format = "best[height<=1080]/best"
             ext_hint = "mp4"
         else:
-            base_format = "bestaudio[ext=m4a]/bestaudio/best"
+            base_format = "bestaudio/best"
             ext_hint = "m4a"
         opts = dict(
             _fresh_opts(base_format),
