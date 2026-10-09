@@ -41,14 +41,13 @@ class QueueViewModel(
         val hasQueue: Boolean get() = current != null || upNext.isNotEmpty()
     }
 
-    private val currentSong = playerConnection.state.flatMapLatest { playback ->
-        val id = playback.currentSongId
-        if (id == null) flowOf(null) else library.song(id)
+    private val currentSong = combine(playerConnection.songs, playerConnection.state) { songs, playback ->
+        playback.currentSongId?.let { songs[it] }
     }
 
-    /** Resolved in queue order: SQL "IN" does not promise ordering, so sort here. */
-    private val queueSongs = playerConnection.state.flatMapLatest { playback ->
-        flow { emit(orderQueue(playback.queueSongIds, library.songsByIds(playback.queueSongIds))) }
+    /** Resolved in queue order from the in-memory playing set (works for streamed songs too). */
+    private val queueSongs = combine(playerConnection.songs, playerConnection.state) { songs, playback ->
+        playback.queueSongIds.mapNotNull { songs[it] }
     }
 
     val uiState: StateFlow<QueueUiState> = combine(

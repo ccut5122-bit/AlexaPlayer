@@ -38,9 +38,8 @@ class RootViewModel(
         val progressFraction: Float = 0f,
     )
 
-    private val currentSong = playerConnection.state.flatMapLatest { playback ->
-        val id = playback.currentSongId
-        if (id == null) flowOf(null) else library.song(id)
+    private val currentSong = combine(playerConnection.songs, playerConnection.state) { songs, playback ->
+        playback.currentSongId?.let { songs[it] }
     }
 
     val miniPlayer: StateFlow<MiniPlayerUiState> = combine(

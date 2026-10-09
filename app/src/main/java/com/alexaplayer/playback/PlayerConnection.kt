@@ -62,6 +62,16 @@ class PlayerConnection(context: Context) {
     private val _videoActive = MutableStateFlow(false)
     val videoActive: StateFlow<Boolean> = _videoActive.asStateFlow()
 
+    // Streamed (YouTube) songs never reach the library database, so the player keeps the
+    // real Song objects in memory. Now Playing / Queue read from here instead of SQL.
+    private val _songs = MutableStateFlow<Map<Long, Song>>(emptyMap())
+    val songs: StateFlow<Map<Long, Song>> = _songs.asStateFlow()
+
+    private fun remember(songs: List<Song>) {
+        if (songs.isEmpty()) return
+        _songs.value = _songs.value + songs.associateBy { it.id }
+    }
+
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var controller: MediaController? = null
     private var tickerJob: Job? = null
@@ -114,6 +124,7 @@ class PlayerConnection(context: Context) {
     fun play(request: PlaybackRequest) {
         val player = controller ?: return
         if (request.songs.isEmpty()) return
+        remember(request.songs)
         val items: List<MediaItem> = request.songs.toMediaItems()
         val startIndex = request.startIndex.coerceIn(0, items.lastIndex)
         player.setMediaItems(items, startIndex, request.startPositionMs)
@@ -184,6 +195,7 @@ class PlayerConnection(context: Context) {
     fun playNext(songs: List<Song>) {
         val player = controller ?: return
         if (songs.isEmpty()) return
+        remember(songs)
         val items = songs.toMediaItems()
         val anchor = player.currentMediaItemIndex
         if (anchor < 0) {
@@ -198,6 +210,7 @@ class PlayerConnection(context: Context) {
     fun addToQueue(songs: List<Song>) {
         val player = controller ?: return
         if (songs.isEmpty()) return
+        remember(songs)
         if (player.mediaItemCount == 0) {
             player.setMediaItems(songs.toMediaItems(), 0, 0L)
             player.prepare()

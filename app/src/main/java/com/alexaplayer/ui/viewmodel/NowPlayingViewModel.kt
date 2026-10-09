@@ -44,9 +44,8 @@ class NowPlayingViewModel(
         val hasPrevious: Boolean = false,
     )
 
-    private val currentSong = playerConnection.state.flatMapLatest { playback ->
-        val id = playback.currentSongId
-        if (id == null) flowOf(null) else library.song(id)
+    private val currentSong = combine(playerConnection.songs, playerConnection.state) { songs, playback ->
+        playback.currentSongId?.let { songs[it] }
     }
 
     val uiState: StateFlow<NowPlayingUiState> = combine(
@@ -73,12 +72,9 @@ class NowPlayingViewModel(
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), NowPlayingUiState())
 
-    @OptIn(ExperimentalCoroutinesApi::class)
-    val upNext: StateFlow<List<Song>> = playerConnection.state
-        .flatMapLatest { playback ->
-            flow { emit(library.songsByIds(playback.upNextIds.take(UP_NEXT_LIMIT))) }
-        }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptyList())
+    val upNext: StateFlow<List<Song>> = combine(playerConnection.songs, playerConnection.state) { songs, playback ->
+        playback.upNextIds.take(UP_NEXT_LIMIT).mapNotNull { songs[it] }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptyList())
 
     private val _errors = MutableSharedFlow<Int>(extraBufferCapacity = 2)
     val errors: SharedFlow<Int> = _errors.asSharedFlow()
