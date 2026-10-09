@@ -23,6 +23,12 @@ data class YoutubeTrack(
     val views: Long?,
 )
 
+/** Search hit list plus an optional note explaining an empty response. */
+data class SearchOutcome(
+    val results: List<YoutubeTrack>,
+    val note: String = "",
+)
+
 /** The short lived (a few hours) audio URL handed to Media3. */
 data class ResolvedStream(
     val videoId: String,
@@ -83,14 +89,14 @@ class YoutubeBridge(context: Context) {
         module = python.getModule("ytmusic")
     }
 
-    suspend fun search(query: String, limit: Int = 25): List<YoutubeTrack> =
+    suspend fun search(query: String, limit: Int = 25): SearchOutcome =
         withContext(Dispatchers.IO) {
             val payload = JSONObject(call("search", query, limit))
             val error = payload.optString("error")
             if (error.isNotEmpty()) throw YoutubeException(error)
 
-            val items = payload.optJSONArray("results") ?: return@withContext emptyList()
-            buildList {
+            val items = payload.optJSONArray("results") ?: return@withContext SearchOutcome(emptyList())
+            val tracks = buildList {
                 for (i in 0 until items.length()) {
                     val entry = items.getJSONObject(i)
                     val id = entry.optString("id")
@@ -107,6 +113,7 @@ class YoutubeBridge(context: Context) {
                     )
                 }
             }
+            SearchOutcome(results = tracks, note = payload.optString("note"))
         }
 
     suspend fun resolve(videoId: String): ResolvedStream =
@@ -149,24 +156,80 @@ class YoutubeBridge(context: Context) {
         }
 
     /**
-     * Where downloads land: app-external Downloads dir. Needs no storage permission on any
-     * API level and the user can reach it via Files > Internal storage > Android/data/AlexaPlayer.
+     * Downloads land in a private cache first, then await publication to public storage.
+     * yt-dlp writes here because the cache needs no permission; [publishToStorage] then moves
+     * the finished file to a folder the user can actually see.
      */
-    val downloadsDir: java.io.File
-        get() = java.io.File(appContext.applicationContext.getExternalFilesDir(null)!!, "Download")
+    private val tempDownloadDir: java.io.File
+        get() = java.io.File(appContext.applicationContext.cacheDir, "downloads")
 
     suspend fun download(videoId: String, kind: String, token: String): DownloadResult =
         withContext(Dispatchers.IO) {
-            downloadsDir.mkdirs()
-            val payload = JSONObject(call("download", videoId, kind, token, downloadsDir.absolutePath))
+            tempDownloadDir.mkdirs()
+            val payload = JSONObject(call("download", videoId, kind, token, tempDownloadDir.absolutePath))
             val error = payload.optString("error")
             if (error.isNotEmpty()) throw YoutubeException(error)
+
+            val temp = java.io.File(payload.optString("path"))
+            val title = payload.optString("title")
+            val ext = payload.optString("ext")
+            val published = publishToStorage(temp, title, ext)
             DownloadResult(
-                path = payload.optString("path"),
-                title = payload.optString("title"),
-                ext = payload.optString("ext"),
+                path = published.absolutePath,
+                title = title,
+                ext = ext,
             )
         }
+
+    /**
+     * Puts a finished download where the user can find it: MediaStore Downloads on API 29+
+     * (visible in Files > Downloads/AlexaPlayer), the legacy public Download folder below
+     * that (permission handled by the manifest for API <= 28).
+     */
+    private fun publishToStorage(source: java.io.File, title: String, ext: String): java.io.File {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val mime = if (ext.equals("mp4", ignoreCase = true)) "video/mp4" else "audio/mp4"
+            val values = android.content.ContentValues().apply {
+                put(android.provider.MediaStore.Downloads.DISPLAY_NAME, "${safeName(title)}.$ext")
+                put(android.provider.MediaStore.Downloads.MIME_TYPE, mime)
+                put(
+                    android.provider.MediaStore.Downloads.RELATIVE_PATH,
+                    android.os.Environment.DIRECTORY_DOWNLOADS + "/AlexaPlayer",
+                )
+                put(android.provider.MediaStore.Downloads.IS_PENDING, 1)
+            }
+            val resolver = appContext.applicationContext.contentResolver
+            val uri = resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            if (uri != null) {
+                resolver.openOutputStream(uri)?.use { out ->
+                    source.inputStream().use { it.copyTo(out) }
+                }
+                values.clear()
+                values.put(android.provider.MediaStore.Downloads.IS_PENDING, 0)
+                resolver.update(uri, values, null, null)
+                return source
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            val dir = java.io.File(
+                android.os.Environment.getExternalStoragePublicDirectory(
+                    android.os.Environment.DIRECTORY_DOWNLOADS,
+                ),
+                "AlexaPlayer",
+            )
+            if (dir.isDirectory || dir.mkdirs()) {
+                val dest = java.io.File(dir, "${safeName(title)}.$ext")
+                source.inputStream().use { input ->
+                    dest.outputStream().use { output -> input.copyTo(output) }
+                }
+                return dest
+            }
+        }
+        return source
+    }
+
+    private fun safeName(title: String): String =
+        title.replace(Regex("[^A-Za-z0-9 _()-]+"), "").trim().ifBlank { "song" }
 
     /** Poll this every ~500ms while a download runs; null means "not downloadable yet". */
     suspend fun downloadProgress(token: String): DownloadProgress =

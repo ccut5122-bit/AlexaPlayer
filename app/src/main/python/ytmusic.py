@@ -1,14 +1,16 @@
 """YouTube search + stream resolution + downloads, bundled with yt-dlp via Chaquopy.
 
 Every entry point takes and returns a JSON string so the Kotlin side never has to
-navigate Chaquopy's dynamic object graph. Failures are returned as
-``{"error": "..."}`` instead of raising, because an exception crossing the bridge
-loses the useful part of yt-dlp's message.
+navigate Chaquopy's dynamic object graph. Failures are returned as ``{"error": "..."}``
+instead of raising, because an exception crossing the bridge loses the useful part of
+yt-dlp's message.
 
-Rate limits: YouTube throttles by IP but also by *client* - each request below picks
-a random device/client and a fresh User-Agent, so the server sees different devices
-rolling past instead of one machine crawling. That dodges client-fingerprint bans;
-a true IP change needs a proxy which an on-device player can't honestly offer.
+Two traffic strategies are used:
+  * Search always uses one stable desktop User-Agent - the search page parses embedded
+    player config that rejects rotated/odd UAs, which is how "no results" usually creeps in.
+  * Format resolution rotates a random device identity per call so the server sees
+    different clients, and falls back through more permissive format strings, because a
+    single client sometimes reports "Requested format is not available".
 """
 
 import json
@@ -16,17 +18,18 @@ import os
 import random
 import time
 
-# Client identities rotate per request. yt-dlp's "player_client" extractor arg plus a
-# matching User-Agent make each call look like a different device.
+# Search keeps one well-known desktop Chrome UA. Rotating it makes YouTube's search page
+# return an empty result list far more often than rotating it helps.
+SEARCH_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/122.0.0.0 Safari/537.36"
+)
+
+# Client identities rotate per request for format resolution/downloads.
 _DEVICES = [
     {
         "client": "android",
         "ua": "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
-    },
-    {
-        "client": "android_vr",
-        "ua": "Mozilla/5.0 (Linux; Android 14; VR) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
     },
     {
@@ -39,11 +42,6 @@ _DEVICES = [
         "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     },
-    {
-        "client": "tv",
-        "ua": "Mozilla/5.0 (SMART-TV; Linux; Tizen 6.0) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) 69.1.2 TV Safari/537.36",
-    },
 ]
 
 # Downloaded bytes are reported through a dict instead of yt-dlp's stdout so a second
@@ -55,24 +53,22 @@ _OPTS = {
     "no_warnings": True,
     "noplaylist": True,
     "cachedir": False,
-    "socket_timeout": 10,
+    "socket_timeout": 12,
     "retries": 1,
     "extractor_retries": 2,
     "sleep_interval_requests": 0.5,
     "geo_bypass": True,
-    # Media3 only needs one clean audio stream; muxed video would just waste data.
     "format": "bestaudio/best",
 }
 
 
-def _fresh_opts(base_format=None):
-    """Build a per-call option set with a randomly picked device identity."""
+def _device_opts(base_format=None):
+    """Options with a randomly picked device UA; used for streams, not search."""
     device = random.choice(_DEVICES)
     opts = dict(_OPTS)
     if base_format:
         opts["format"] = base_format
-    opts["http_headers"] = dict(opts.get("http_headers") or {})
-    opts["http_headers"]["User-Agent"] = device["ua"]
+    opts["http_headers"] = {"User-Agent": device["ua"]}
     return opts
 
 
@@ -84,23 +80,45 @@ def _run(func):
 
 
 def search(query, limit=25):
-    """Flat search: ids, titles, thumbnails and durations, without video streams."""
+    """Flat search. A throttled endpoint answers with an empty playlist, so retry and,
+    as a last resort, re-run without extract_flat (full extraction is heavier but often
+    still passes through)."""
 
     def job():
         import yt_dlp
 
-        opts = dict(_fresh_opts(), extract_flat=True, force_generic_extractor=False)
         url = "ytsearch%d:%s" % (int(limit), str(query))
         results = []
-        # YouTube answers a throttled search with an empty playlist rather than an error,
-        # so treat "nothing came back" as a retryable condition in its own right.
-        for attempt in range(3):
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-            results = [e for e in (info.get("entries") or []) if e]
-            if results:
-                break
-            time.sleep(1.5 * (attempt + 1))
+        last_flat = None
+        for attempt in range(2):
+            opts = dict(
+                dict(_OPTS, extract_flat=True),
+                http_headers={"User-Agent": SEARCH_UA},
+            )
+            try:
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    info = ydl.extract_info(url, download=False)
+                entries = [e for e in (info.get("entries") or []) if e]
+                if entries:
+                    results = entries
+                    break
+            except Exception as exc:  # noqa: BLE001
+                last_flat = exc
+            time.sleep(1.2 * (attempt + 1))
+
+        if not results:
+            # Last resort: full extraction. Slower, but it refuses to give up quietly.
+            try:
+                opts = dict(
+                    dict(_OPTS, extract_flat=False),
+                    http_headers={"User-Agent": SEARCH_UA},
+                )
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    info = ydl.extract_info(url, download=False)
+                results = [e for e in (info.get("entries") or []) if e]
+            except Exception as exc:  # noqa: BLE001
+                last_flat = exc
+
         out = []
         for entry in results:
             if not entry:
@@ -116,26 +134,37 @@ def search(query, limit=25):
                     "views": entry.get("view_count"),
                 }
             )
+        if not out:
+            return {"results": [], "note": "YouTube rate-limited this network" if last_flat is not None else ""}
         return {"results": out}
 
     return _run(job)
 
 
 def _stream(target, base_format):
-    """Pull the chosen stream URL + headers for a video."""
+    """Pull a playable stream URL + headers, falling back to more permissive formats so a
+    single client's "Requested format is not available" never kills playback."""
 
     def job():
         import yt_dlp
 
-        # Must not rebind `target` here - Python would treat it as local and this raises
-        # "cannot access local variable 'target'" (UnboundLocalError). Read into a fresh name.
         target_url = str(target)
         if not target_url.startswith(("http://", "https://")):
             target_url = "https://www.youtube.com/watch?v=%s" % target_url
 
-        opts = dict(_fresh_opts(base_format), extract_flat=False)
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(target_url, download=False)
+        info = None
+        last_error = None
+        for fmt in (base_format, "best"):
+            opts = dict(_device_opts(fmt), extract_flat=False)
+            try:
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    info = ydl.extract_info(target_url, download=False)
+                break
+            except Exception as exc:  # noqa: BLE001
+                last_error = exc
+
+        if info is None:
+            raise RuntimeError("No playable stream (%s)" % (last_error or "unknown"))
 
         fmt = info.get("requested_formats") or []
         pick = next(
@@ -170,10 +199,11 @@ def resolve(video_id, video_url=None):
     target = video_url or "https://www.youtube.com/watch?v=%s" % video_id
     return _stream(target, "bestaudio/best")
 
+
 def resolve_video(video_id, video_url=None):
     """Return a playable muxed (audio+video) URL for full-screen playback."""
     target = video_url or "https://www.youtube.com/watch?v=%s" % video_id
-    return _stream(target, "best[height<=1080]/best[ext=mp4]/best")
+    return _stream(target, "best[height<=1080]/best")
 
 
 def download_progress(token):
@@ -182,19 +212,19 @@ def download_progress(token):
 
 
 def download(video_id, kind, token, outdir):
-    """Download a song (kind=audio -> best audio) or a video (kind=video -> muxed mp4)."""
+    """Download a song (kind=audio) or a video (kind=video) into outdir, reporting
+    byte-level progress on _PROGRESS. The calling (Kotlin) side moves the result into
+    public storage afterwards."""
 
     def job():
         import yt_dlp
 
         if kind == "video":
             base_format = "best[height<=1080]/best"
-            ext_hint = "mp4"
         else:
             base_format = "bestaudio/best"
-            ext_hint = "m4a"
         opts = dict(
-            _fresh_opts(base_format),
+            _device_opts(base_format),
             skip_download=False,
             outtmpl=os.path.join(str(outdir), "%(title).120s-%(id)s.%(ext)s"),
             progress_hooks=[_progress_hook(str(token))],
@@ -209,11 +239,15 @@ def download(video_id, kind, token, outdir):
             _PROGRESS[str(token)] = {"status": "error", "error": "Download produced no file"}
             raise RuntimeError("Download produced no file")
 
-        _PROGRESS[str(token)] = {"status": "finished", "path": path, "title": info.get("title") or ""}
+        _PROGRESS[str(token)] = {
+            "status": "finished",
+            "path": path,
+            "title": info.get("title") or "",
+        }
         return {
             "path": path,
             "title": info.get("title") or "",
-            "ext": os.path.splitext(path)[1].lstrip(".") or ext_hint,
+            "ext": os.path.splitext(path)[1].lstrip(".") or "m4a",
         }
 
     return _run(job)

@@ -7,6 +7,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.alexaplayer.data.youtube.ActiveDownload
 import com.alexaplayer.data.youtube.DownloadProgress
+import com.alexaplayer.data.youtube.SearchOutcome
 import com.alexaplayer.data.youtube.YoutubeBridge
 import com.alexaplayer.data.youtube.YoutubeTrack
 import com.alexaplayer.di.AppContainer
@@ -91,19 +92,21 @@ class YoutubeViewModel(
                     } catch (cancellation: CancellationException) {
                         throw cancellation
                     } catch (error: Exception) {
-                        feed to emptyList<YoutubeTrack>()
+                        feed to SearchOutcome(emptyList())
                     }
                 }
             }
             jobs.forEach { deferred ->
-                val (feed, tracks) = deferred.await()
+                val (feed, outcome) = deferred.await()
                 _uiState.value = _uiState.value.copy(
                     sections = _uiState.value.sections + YoutubeSection(
                         title = feed.title,
                         query = feed.query,
-                        results = tracks,
+                        results = outcome.results,
                         loading = false,
-                        error = if (tracks.isEmpty()) "Could not load ${feed.title}" else null,
+                        error = if (outcome.results.isEmpty()) {
+                            outcome.note.takeIf { it.isNotBlank() } ?: "Could not load ${feed.title}"
+                        } else null,
                     ),
                 )
             }
@@ -143,8 +146,12 @@ class YoutubeViewModel(
         searchJob = viewModelScope.launch {
             _uiState.value = _uiState.value.copy(searching = true, hasSearched = true, error = null)
             try {
-                val results = bridge.search(query)
-                _uiState.value = _uiState.value.copy(results = results, searching = false)
+                val outcome = bridge.search(query)
+                _uiState.value = _uiState.value.copy(
+                    results = outcome.results,
+                    searching = false,
+                    error = if (outcome.results.isEmpty()) outcome.note.takeUnless { it.isBlank() } else null,
+                )
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (error: Exception) {
@@ -241,7 +248,7 @@ class YoutubeViewModel(
                     return@launch
                 }
                 updateDownloadProgress(token, 100, result.path, failed = false, done = true)
-                _uiState.value = _uiState.value.copy(message = "Saved in Downloads")
+                _uiState.value = _uiState.value.copy(message = "Saved to Download/AlexaPlayer")
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (error: Exception) {

@@ -14,6 +14,9 @@ import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.CommandButton
+import androidx.media3.datasource.DataSourceBitmapLoader
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.session.BitmapLoader
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
@@ -97,19 +100,20 @@ class PlaybackService : MediaSessionService() {
 
         mediaSession = MediaSession.Builder(this, player)
             .setSessionActivity(sessionActivityIntent())
+            .setBitmapLoader(bitmapLoader())
             .setCallback(SessionCallback())
             .setId(SESSION_ID)
             .build()
 
         mediaSession.setCustomLayout(customLayout())
 
-        setMediaNotificationProvider(
-            DefaultMediaNotificationProvider.Builder(this)
-                .setChannelId(NOTIFICATION_CHANNEL_ID)
-                .setChannelName(R.string.app_name)
-                .setNotificationId(NOTIFICATION_ID)
-                .build(),
-        )
+        val notificationProvider = DefaultMediaNotificationProvider.Builder(this)
+            .setChannelId(NOTIFICATION_CHANNEL_ID)
+            .setChannelName(R.string.app_name)
+            .setNotificationId(NOTIFICATION_ID)
+            .build()
+            .apply { setSmallIcon(R.drawable.ic_notification) }
+        setMediaNotificationProvider(notificationProvider)
 
         player.addListener(playerListener)
 
@@ -168,6 +172,14 @@ class PlaybackService : MediaSessionService() {
             }
         }
     }
+
+    /** Artwork for the media notification, fetched from the stream's thumbnail URL. */
+    private fun bitmapLoader(): BitmapLoader =
+        DataSourceBitmapLoader.Builder(this)
+            .setDataSourceFactory(
+                DefaultHttpDataSource.Factory().setUserAgent(STREAM_USER_AGENT),
+            )
+            .build()
 
     private fun startPositionUpdates() {
         if (positionJob?.isActive == true) return
