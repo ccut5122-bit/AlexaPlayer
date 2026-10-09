@@ -76,6 +76,7 @@ fun AlexaPlayerNavHost(container: AppContainer, modifier: Modifier = Modifier) {
     val rootViewModel: RootViewModel = viewModel(factory = RootViewModel.factory(container))
     val miniPlayer by rootViewModel.miniPlayer.collectAsStateWithLifecycle()
     val playback by container.playerConnection.state.collectAsStateWithLifecycle()
+    val videoActive by container.playerConnection.videoActive.collectAsStateWithLifecycle()
     val currentSongId = playback.currentSongId
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
@@ -450,6 +451,7 @@ fun AlexaPlayerNavHost(container: AppContainer, modifier: Modifier = Modifier) {
                     onPlayUpNext = vm::playUpNextIndex,
                     errorText = if (errorRes == 0) null else stringResource(errorRes),
                     playerProvider = { container.playerConnection.player },
+                    videoActive = videoActive,
                 )
             }
 

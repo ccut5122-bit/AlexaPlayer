@@ -137,7 +137,7 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
-    private fun buildNotificationProvider(): androidx.media3.session.MediaNotificationProvider =
+    private fun buildNotificationProvider(): DefaultMediaNotificationProvider =
         DefaultMediaNotificationProvider.Builder(this)
             .setChannelId(NOTIFICATION_CHANNEL_ID)
             .setChannelName(R.string.app_name)

@@ -59,6 +59,9 @@ class PlayerConnection(context: Context) {
     private val _connected = MutableStateFlow(false)
     val connected: StateFlow<Boolean> = _connected.asStateFlow()
 
+    private val _videoActive = MutableStateFlow(false)
+    val videoActive: StateFlow<Boolean> = _videoActive.asStateFlow()
+
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var controller: MediaController? = null
     private var tickerJob: Job? = null
@@ -270,6 +273,8 @@ class PlayerConnection(context: Context) {
         val player = controller ?: return
         val index = player.currentMediaItemIndex
         val size = player.mediaItemCount
+
+        _videoActive.value = player.videoSize.width > 0 && player.videoSize.height > 0
 
         val ids = if (size != lastQueueSize || index != lastQueueIndex) {
             ArrayList<Long>(size).apply {
