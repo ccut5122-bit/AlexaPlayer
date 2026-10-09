@@ -449,6 +449,7 @@ fun AlexaPlayerNavHost(container: AppContainer, modifier: Modifier = Modifier) {
                     },
                     onPlayUpNext = vm::playUpNextIndex,
                     errorText = if (errorRes == 0) null else stringResource(errorRes),
+                    playerProvider = { container.playerConnection.player },
                 )
             }
 

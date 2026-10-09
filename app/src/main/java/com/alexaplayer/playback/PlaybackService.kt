@@ -57,6 +57,7 @@ class PlaybackService : MediaSessionService() {
     private var gapJob: Job? = null
     private var resumeAfterFocusLoss = false
     private var gaplessPlayback = true
+    private var notificationEnabled = true
 
     /** Exposed for the in-app player so it can resolve titles and favourite state. */
     var container: com.alexaplayer.di.AppContainer? = null
@@ -106,13 +107,7 @@ class PlaybackService : MediaSessionService() {
 
         mediaSession.setCustomLayout(customLayout())
 
-        val notificationProvider = DefaultMediaNotificationProvider.Builder(this)
-            .setChannelId(NOTIFICATION_CHANNEL_ID)
-            .setChannelName(R.string.app_name)
-            .setNotificationId(NOTIFICATION_ID)
-            .build()
-            .apply { setSmallIcon(R.drawable.ic_notification) }
-        setMediaNotificationProvider(notificationProvider)
+        setMediaNotificationProvider(buildNotificationProvider())
 
         player.addListener(playerListener)
 
@@ -126,14 +121,29 @@ class PlaybackService : MediaSessionService() {
         serviceScope.launch {
             container?.settingsRepository?.settings?.collect { settings ->
                 gaplessPlayback = settings.gaplessPlayback
-                if (!settings.mediaNotificationEnabled && player.isPlaying) {
+                if (settings.mediaNotificationEnabled) {
+                    if (!notificationEnabled) {
+                        // Fresh provider instance resets the foreground state a DETACHed
+                        // notification put us in, so the banner comes back live.
+                        setMediaNotificationProvider(buildNotificationProvider())
+                    }
+                } else if (player.isPlaying) {
                     // The user opted out of the media notification: keep the audio but
                     // detach it from the shade.
                     stopForeground(STOP_FOREGROUND_DETACH)
                 }
+                notificationEnabled = settings.mediaNotificationEnabled
             }
         }
     }
+
+    private fun buildNotificationProvider(): androidx.media3.session.MediaNotificationProvider =
+        DefaultMediaNotificationProvider.Builder(this)
+            .setChannelId(NOTIFICATION_CHANNEL_ID)
+            .setChannelName(R.string.app_name)
+            .setNotificationId(NOTIFICATION_ID)
+            .build()
+            .apply { setSmallIcon(R.drawable.ic_notification) }
 
 
     private val focusCallbacks = object : AudioFocusController.Callbacks {

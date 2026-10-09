@@ -189,7 +189,14 @@ class YoutubeBridge(context: Context) {
      */
     private fun publishToStorage(source: java.io.File, title: String, ext: String): java.io.File {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val mime = if (ext.equals("mp4", ignoreCase = true)) "video/mp4" else "audio/mp4"
+            val mime = when (ext.lowercase()) {
+                "mp4", "m4v" -> "video/mp4"
+                "webm" -> "video/webm"
+                "mp3" -> "audio/mpeg"
+                "m4a", "aac" -> "audio/mp4"
+                "webma", "ogg" -> "audio/webm"
+                else -> "application/octet-stream"
+            }
             val values = android.content.ContentValues().apply {
                 put(android.provider.MediaStore.Downloads.DISPLAY_NAME, "${safeName(title)}.$ext")
                 put(android.provider.MediaStore.Downloads.MIME_TYPE, mime)

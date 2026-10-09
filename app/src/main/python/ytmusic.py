@@ -195,9 +195,11 @@ def _stream(target, base_format):
 
 
 def resolve(video_id, video_url=None):
-    """Return the playable audio URL plus the headers Media3 needs to fetch it."""
+    """Return a playable muxed (audio+video) URL capped at 720p, plus the headers Media3
+    needs to fetch it. Music gets its audio from the muxed stream, and the in-app player
+    can attach a surface to the same stream to render the video when the song has one."""
     target = video_url or "https://www.youtube.com/watch?v=%s" % video_id
-    return _stream(target, "bestaudio/best")
+    return _stream(target, "best[height<=720]/best")
 
 
 def resolve_video(video_id, video_url=None):
@@ -220,18 +222,30 @@ def download(video_id, kind, token, outdir):
         import yt_dlp
 
         if kind == "video":
-            base_format = "best[height<=1080]/best"
+            formats = ("best[height<=1080]/best", "best", "18")
         else:
-            base_format = "bestaudio/best"
-        opts = dict(
-            _device_opts(base_format),
-            skip_download=False,
-            outtmpl=os.path.join(str(outdir), "%(title).120s-%(id)s.%(ext)s"),
-            progress_hooks=[_progress_hook(str(token))],
-        )
+            formats = ("bestaudio/best", "bestaudio", "best")
         url = "https://www.youtube.com/watch?v=%s" % video_id
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(url, download=True)
+
+        info = None
+        last_error = None
+        for fmt in formats:
+            opts = dict(
+                _device_opts(fmt),
+                skip_download=False,
+                outtmpl=os.path.join(str(outdir), "%(title).120s-%(id)s.%(ext)s"),
+                progress_hooks=[_progress_hook(str(token))],
+            )
+            try:
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    info = ydl.extract_info(url, download=True)
+                break
+            except Exception as exc:  # noqa: BLE001 - try the next, more permissive format
+                _PROGRESS[str(token)] = {"status": "error", "error": str(exc)}
+                last_error = exc
+
+        if info is None:
+            raise RuntimeError("Download failed (%s)" % (last_error or "unknown"))
 
         requested = info.get("requested_downloads") or []
         path = requested[0].get("filepath") if requested else None

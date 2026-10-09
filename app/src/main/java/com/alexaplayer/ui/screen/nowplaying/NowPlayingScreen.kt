@@ -29,6 +29,11 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.common.C
+import androidx.media3.common.Player
+import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.PlayerView
 import com.alexaplayer.R
 import com.alexaplayer.core.designsystem.component.AlexaIconButton
 import com.alexaplayer.core.designsystem.component.Artwork
@@ -67,6 +72,7 @@ fun NowPlayingScreen(
     onToggleFavorite: (Song) -> Unit,
     onPlayUpNext: (Int) -> Unit,
     errorText: String?,
+    playerProvider: () -> Player?,
     modifier: Modifier = Modifier,
 ) {
     val extended = AlexaTheme.extended
@@ -122,16 +128,24 @@ fun NowPlayingScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 item(key = "artwork") {
-                    Artwork(
-                        artworkUri = song.artworkUri,
-                        seed = song.id,
-                        contentDescription = stringResource(R.string.cd_artwork),
-                        shape = RoundedCornerShape(AlexaRadius.artworkLarge),
+                    val artAspect = if (song.isStream) 16f / 9f else 1f
+                    Box(
                         modifier = Modifier
                             .padding(horizontal = AlexaSpacing.xl)
                             .fillMaxWidth()
-                            .aspectRatio(1f),
-                    )
+                            .aspectRatio(artAspect),
+                    ) {
+                        Artwork(
+                            artworkUri = song.artworkUri,
+                            seed = song.id,
+                            contentDescription = stringResource(R.string.cd_artwork),
+                            shape = RoundedCornerShape(AlexaRadius.artworkLarge),
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                        if (song.isStream) {
+                            VideoSurface(playerProvider)
+                        }
+                    }
                 }
 
                 item(key = "meta") {
@@ -352,3 +366,24 @@ private fun PlayPauseButton(
 
 private val PLAY_BUTTON_SIZE = 64.dp
 private const val UP_NEXT_PREVIEW = 5
+
+/**
+ * Renders the playing stream's video on top of the artwork. A texture surface stays
+ * transparent until actual video frames arrive, so audio-only streams keep showing the
+ * artwork underneath. The screen is cleared on release so background playback continues
+ * without rendering video.
+ */
+@Composable
+private fun VideoSurface(playerProvider: () -> Player?) {
+    AndroidView(
+        factory = { ctx ->
+            PlayerView(ctx).apply {
+                setSurfaceType(C.SURFACE_TYPE_TEXTURE_VIEW)
+                useController = false
+                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+            }
+        },
+        update = { view -> view.player = playerProvider() },
+        onRelease = { it.player = null },
+    )
+}

@@ -65,6 +65,10 @@ class PlayerConnection(context: Context) {
     private var lastQueueSize = -1
     private var lastQueueIndex = -2
 
+    /** The bound [androidx.media3.common.Player], for surfaces like PlayerView in the UI. */
+    val player: androidx.media3.common.Player?
+        get() = controller
+
     private val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) = publish()
 
