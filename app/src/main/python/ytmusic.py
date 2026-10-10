@@ -63,7 +63,8 @@ _OPTS = {
 
 # YouTube blocks some clients for some videos ("Requested format is not available" is the
 # usual symptom). Trying the whole ladder underneath keeps playback alive in practice.
-_CLIENTS = ["android_vr", "ios", "android", "web_music", "tv", "mweb", "web"]
+# mp4-capable clients first, because Android's decoder is happiest with them.
+_CLIENTS = ["android", "ios", "web", "android_vr", "tv", "mweb", "web_music"]
 
 # Stream URLs stay valid for a while; cache them so replaying a song is instant instead
 # of another slow round trip to the extractor.
@@ -72,14 +73,12 @@ _RESOLVE_TTL = 900  # 15 minutes
 
 
 def _cap_format(height):
-    """The most specific height-capped muxed format selector for the given resolution."""
+    """The most specific height-capped muxed format selector for the given resolution.
+    Prefers mp4 (Android decodes it everywhere), then any muxed stream."""
+    base = "best[height<=%d]" % max(240, int(height))
     if height >= 2160:
-        return "best[height<=2160]/best"
-    if height >= 1080:
-        return "best[height<=1080]/best"
-    if height >= 720:
-        return "best[height<=720]/best"
-    return "best[height<=480]/best"
+        base = "best[height<=2160]"
+    return "%s[ext=mp4]/%s/best" % (base, base)
 
 
 def _device_opts(base_format=None):

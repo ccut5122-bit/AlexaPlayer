@@ -60,7 +60,10 @@ private data class HomeFeed(
 class YoutubeViewModel(
     private val bridge: YoutubeBridge,
     private val settingsRepository: com.alexaplayer.data.prefs.SettingsRepository,
+    private val playerConnection: com.alexaplayer.playback.PlayerConnection,
 ) : ViewModel() {
+
+    private var autoplayJob: Job? = null
 
     private val _uiState = MutableStateFlow(YoutubeUiState())
     val uiState: StateFlow<YoutubeUiState> = _uiState.asStateFlow()
@@ -197,6 +200,34 @@ class YoutubeViewModel(
                 return@launch
             }
             _uiState.value = _uiState.value.copy(resolvingId = null)
+            startAutoplay(track)
+        }
+    }
+
+    /**
+     * YouTube-style autoplay: after the tapped song starts, quietly resolve a few similar
+     * songs and append them, so Next and continuous playback work right away.
+     */
+    private fun startAutoplay(track: YoutubeTrack) {
+        autoplayJob?.cancel()
+        autoplayJob = viewModelScope.launch {
+            try {
+                val related = bridge.search("${track.title} ${track.channel}".trim(), limit = 8)
+                val height = videoHeight()
+                var queued = 0
+                for (item in related.results) {
+                    if (queued >= AUTOPLAY_LIMIT) break
+                    if (item.videoId == track.videoId) continue
+                    val song = runCatching { bridge.toSong(bridge.resolve(item.videoId, height)) }
+                        .getOrNull() ?: continue
+                    playerConnection.addToQueue(listOf(song))
+                    queued++
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Exception) {
+                // Autoplay is best-effort; a failure here must never surface to the user.
+            }
         }
     }
 
@@ -299,11 +330,14 @@ class YoutubeViewModel(
     }
 
     companion object {
+        private const val AUTOPLAY_LIMIT = 5
+
         fun factory(container: AppContainer): ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 YoutubeViewModel(
                     bridge = container.youtubeBridge,
                     settingsRepository = container.settingsRepository,
+                    playerConnection = container.playerConnection,
                 )
             }
         }

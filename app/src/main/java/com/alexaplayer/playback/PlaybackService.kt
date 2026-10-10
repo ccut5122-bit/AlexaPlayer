@@ -11,6 +11,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.CommandButton
@@ -68,13 +69,18 @@ class PlaybackService : MediaSessionService() {
         container = (application as AlexaPlayerApp).container
 
         player = ExoPlayer.Builder(this)
-            // YouTube's CDN is picky about the client it resolved for, so playback has to
-            // present the exact same UA the extractor just used.
+            // YouTube's CDN validates the request headers the extractor signed the URL
+            // with, so playback replays them per-URL via the resolver below.
             .setMediaSourceFactory(
                 DefaultMediaSourceFactory(
                     DefaultDataSource.Factory(
                         this,
-                        DefaultHttpDataSource.Factory().setUserAgent(STREAM_USER_AGENT),
+                        ResolvingDataSource.Factory(
+                            DefaultHttpDataSource.Factory().setUserAgent(STREAM_USER_AGENT),
+                        ) { dataSpec ->
+                            val headers = StreamHeaders.of(dataSpec.uri.toString())
+                            if (headers.isEmpty()) dataSpec else dataSpec.withRequestHeaders(headers)
+                        },
                     ),
                 ),
             )

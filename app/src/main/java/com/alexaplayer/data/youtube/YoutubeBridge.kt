@@ -38,6 +38,7 @@ data class ResolvedStream(
     val channel: String,
     val durationMs: Long,
     val thumbnailUrl: String,
+    val headers: Map<String, String> = emptyMap(),
 )
 
 /** A finished download: absolute path on disk plus what kind of file it is. */
@@ -133,6 +134,7 @@ class YoutubeBridge(context: Context) {
                 channel = payload.optString("channel"),
                 durationMs = payload.optLong("duration").secondsToMillis(),
                 thumbnailUrl = payload.optString("thumbnail"),
+                headers = payload.optJSONObject("headers")?.toStringMap() ?: emptyMap(),
             )
         }
 
@@ -153,6 +155,7 @@ class YoutubeBridge(context: Context) {
                 channel = payload.optString("channel"),
                 durationMs = payload.optLong("duration").secondsToMillis(),
                 thumbnailUrl = payload.optString("thumbnail"),
+                headers = payload.optJSONObject("headers")?.toStringMap() ?: emptyMap(),
             )
         }
 
@@ -253,6 +256,7 @@ class YoutubeBridge(context: Context) {
 
     /** Queues are keyed by Long, so synthetic rows live in a negative id space of their own. */
     fun toSong(stream: ResolvedStream): Song {
+        com.alexaplayer.playback.StreamHeaders.put(stream.url, stream.headers)
         val now = System.currentTimeMillis() / 1000
         return Song(
             id = syntheticId(stream.videoId),
@@ -277,6 +281,12 @@ class YoutubeBridge(context: Context) {
     private fun call(name: String, vararg args: Any?): String =
         runCatching { module.callAttr(name, *args).toString() }
             .getOrElse { throw YoutubeException(it.message ?: "Extraction failed") }
+
+    private fun org.json.JSONObject.toStringMap(): Map<String, String> {
+        val map = linkedMapOf<String, String>()
+        keys().forEach { key -> optString(key).takeIf { it.isNotBlank() }?.let { map[key] = it } }
+        return map
+    }
 
     private fun Long.secondsToMillis(): Long = if (this <= 0L) 0L else this * 1000
 
