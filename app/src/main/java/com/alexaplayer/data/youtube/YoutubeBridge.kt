@@ -118,6 +118,18 @@ class YoutubeBridge(context: Context) {
             SearchOutcome(results = tracks, note = payload.optString("note"))
         }
 
+    /** YouTube query autocomplete for the search field. Never throws: an empty list is fine. */
+    suspend fun suggest(query: String): List<String> =
+        withContext(Dispatchers.IO) {
+            if (query.isBlank()) return@withContext emptyList()
+            val payload = runCatching { JSONObject(call("suggest", query)) }.getOrNull()
+                ?: return@withContext emptyList()
+            val items = payload.optJSONArray("suggestions") ?: return@withContext emptyList()
+            (0 until items.length()).mapNotNull { i ->
+                items.optString(i).takeIf { it.isNotBlank() }
+            }
+        }
+
     suspend fun resolve(videoId: String, maxHeight: Int): ResolvedStream =
         withContext(Dispatchers.IO) {
             val payload = JSONObject(call("resolve", videoId, maxHeight))
@@ -257,6 +269,8 @@ class YoutubeBridge(context: Context) {
     /** Queues are keyed by Long, so synthetic rows live in a negative id space of their own. */
     fun toSong(stream: ResolvedStream): Song {
         com.alexaplayer.playback.StreamHeaders.put(stream.url, stream.headers)
+        val id = syntheticId(stream.videoId)
+        com.alexaplayer.playback.StreamIds.put(id, stream.videoId)
         val now = System.currentTimeMillis() / 1000
         return Song(
             id = syntheticId(stream.videoId),

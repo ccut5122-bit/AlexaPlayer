@@ -160,6 +160,31 @@ def search(query, limit=25):
     return _run(job)
 
 
+def suggest(query, limit=10):
+    """YouTube's own search autocomplete (the dropdown suggestions), via the public
+    complete/search endpoint. Cheap and fast compared to a full search."""
+
+    def job():
+        q = str(query or "").strip()
+        if not q:
+            return {"suggestions": []}
+        import urllib.parse
+        import urllib.request
+
+        url = (
+            "https://suggestqueries-clients6.youtube.com/complete/search"
+            "?client=firefox&ds=yt&q=" + urllib.parse.quote(q)
+        )
+        req = urllib.request.Request(url, headers={"User-Agent": SEARCH_UA})
+        with urllib.request.urlopen(req, timeout=6) as resp:
+            data = json.loads(resp.read().decode("utf-8", "replace"))
+        items = data[1] if isinstance(data, list) and len(data) > 1 else []
+        out = [str(x) for x in items if isinstance(x, str)][: int(limit)]
+        return {"suggestions": out}
+
+    return _run(job)
+
+
 def _stream(target, base_format):
     """Pull a playable stream URL + headers. Falls back through more permissive format
     selectors AND the whole player-client ladder, so a single client's "Requested format

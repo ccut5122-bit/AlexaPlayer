@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.view.View
 import android.view.WindowManager
 import androidx.media3.common.MediaItem
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import com.alexaplayer.R
 
@@ -16,6 +17,7 @@ import com.alexaplayer.R
  * its own (separate from the background audio service) so navigating back returns you to
  * whatever the audio session was playing.
  */
+@OptIn(UnstableApi::class)
 class VideoPlayerActivity : Activity() {
 
     private var player: ExoPlayer? = null
@@ -33,12 +35,25 @@ class VideoPlayerActivity : Activity() {
         }
 
         val playerView = findViewById<androidx.media3.ui.PlayerView>(R.id.player_view)
-        player = ExoPlayer.Builder(this).build().also { exo ->
-            exo.setMediaItem(MediaItem.fromUri(url))
-            exo.prepare()
-            exo.playWhenReady = true
-            playerView.player = exo
-        }
+        player = ExoPlayer.Builder(this)
+            .setMediaSourceFactory(mediaSourceFactory(url))
+            .build()
+            .also { exo ->
+                exo.setMediaItem(MediaItem.fromUri(url))
+                exo.prepare()
+                exo.playWhenReady = true
+                playerView.player = exo
+            }
+    }
+
+    /** YouTube needs back the same request headers the extractor signed the URL with. */
+    private fun mediaSourceFactory(url: String): androidx.media3.exoplayer.source.MediaSource.Factory {
+        val httpFactory = androidx.media3.datasource.DefaultHttpDataSource.Factory()
+        val headers = com.alexaplayer.playback.StreamHeaders.of(url)
+        if (headers.isNotEmpty()) httpFactory.setDefaultRequestProperties(headers)
+        return androidx.media3.exoplayer.source.DefaultMediaSourceFactory(
+            androidx.media3.datasource.DefaultDataSource.Factory(this, httpFactory),
+        )
     }
 
     private fun hideSystemBars() {

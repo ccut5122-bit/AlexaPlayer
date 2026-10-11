@@ -28,6 +28,8 @@ import kotlinx.coroutines.launch
 class NowPlayingViewModel(
     private val library: LibraryRepository,
     private val playerConnection: PlayerConnection,
+    private val settingsRepository: com.alexaplayer.data.prefs.SettingsRepository,
+    private val bridge: com.alexaplayer.data.youtube.YoutubeBridge,
 ) : ViewModel() {
 
     data class NowPlayingUiState(
@@ -42,6 +44,7 @@ class NowPlayingViewModel(
         val queueCount: Int = 0,
         val hasNext: Boolean = false,
         val hasPrevious: Boolean = false,
+        val videoQuality: Int = 720,
     )
 
     private val currentSong = combine(playerConnection.songs, playerConnection.state) { songs, playback ->
@@ -52,7 +55,8 @@ class NowPlayingViewModel(
         currentSong,
         playerConnection.state,
         playerConnection.progress,
-    ) { song, playback, progress ->
+        settingsRepository.settings,
+    ) { song, playback, progress, settings ->
         NowPlayingUiState(
             song = song,
             isPlaying = playback.isPlaying,
@@ -69,6 +73,7 @@ class NowPlayingViewModel(
             queueCount = playback.queueSongIds.size,
             hasNext = playback.hasNext,
             hasPrevious = playback.hasPrevious,
+            videoQuality = settings.videoQuality,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), NowPlayingUiState())
 
@@ -123,6 +128,25 @@ class NowPlayingViewModel(
         }
     }
 
+    /**
+     * Changes the stream resolution on the fly: persists the choice, then re-resolves the
+     * playing track and swaps it in place, keeping the position and queue intact.
+     */
+    fun setQuality(height: Int) {
+        viewModelScope.launch {
+            settingsRepository.setVideoQuality(height)
+            val song = uiState.value.song
+            if (song == null || !song.isStream) return@launch
+            val videoId = com.alexaplayer.playback.StreamIds.of(song.id) ?: return@launch
+            try {
+                val resolved = bridge.resolve(videoId, height)
+                playerConnection.replaceCurrent(bridge.toSong(resolved))
+            } catch (error: Exception) {
+                _messages.emit(UiMessage(R.string.error_generic))
+            }
+        }
+    }
+
     fun playUpNextIndex(index: Int) {
         val playback = playerConnection.state.value
         val target = playback.queueIndex + 1 + index
@@ -147,6 +171,8 @@ class NowPlayingViewModel(
                 NowPlayingViewModel(
                     library = container.libraryRepository,
                     playerConnection = container.playerConnection,
+                    settingsRepository = container.settingsRepository,
+                    bridge = container.youtubeBridge,
                 )
             }
         }

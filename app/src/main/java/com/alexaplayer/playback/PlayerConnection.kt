@@ -227,6 +227,22 @@ class PlayerConnection(context: Context) {
         publish()
     }
 
+    /**
+     * Swaps the currently playing item for a freshly resolved version of the same song,
+     * keeping its position and the rest of the queue intact. Used when the stream quality
+     * changes mid-playback.
+     */
+    fun replaceCurrent(song: Song) {
+        val player = controller ?: return
+        val index = player.currentMediaItemIndex
+        if (index !in 0 until player.mediaItemCount) return
+        remember(listOf(song))
+        val position = player.currentPosition.coerceAtLeast(0L)
+        player.replaceMediaItem(index, song.toMediaItem())
+        player.seekTo(index, position)
+        publish()
+    }
+
     fun moveQueueItem(from: Int, to: Int) {
         val player = controller ?: return
         if (from !in 0 until player.mediaItemCount || to !in 0 until player.mediaItemCount) return

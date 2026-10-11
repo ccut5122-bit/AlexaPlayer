@@ -166,6 +166,7 @@ fun AlexaPlayerNavHost(container: AppContainer, modifier: Modifier = Modifier) {
                     onQueryChange = vm::onQueryChange,
                     onSubmit = vm::submit,
                     onClear = vm::clearQuery,
+                    onSelectSuggestion = vm::selectSuggestion,
                     onPlay = { track ->
                         vm.play(track) { song -> rootViewModel.openSong(listOf(song), 0) }
                     },
@@ -436,6 +437,7 @@ fun AlexaPlayerNavHost(container: AppContainer, modifier: Modifier = Modifier) {
             }
 
             composable(Routes.NOW_PLAYING) {
+                val context = LocalContext.current
                 val vm: NowPlayingViewModel = viewModel(factory = NowPlayingViewModel.factory(container))
                 val state by vm.uiState.collectAsStateWithLifecycle()
                 val upNext by vm.upNext.collectAsStateWithLifecycle()
@@ -458,6 +460,16 @@ fun AlexaPlayerNavHost(container: AppContainer, modifier: Modifier = Modifier) {
                         }
                     },
                     onPlayUpNext = vm::playUpNextIndex,
+                    onSelectQuality = vm::setQuality,
+                    onFullscreen = state.song
+                        ?.takeIf { it.isStream }
+                        ?.let { song ->
+                            {
+                                context.startActivity(
+                                    VideoPlayerActivity.intent(context, song.uri, song.title),
+                                )
+                            }
+                        },
                     errorText = if (errorRes == 0) null else stringResource(errorRes),
                     playerProvider = { container.playerConnection.player },
                 )

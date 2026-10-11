@@ -65,6 +65,7 @@ fun YoutubeScreen(
     onQueryChange: (String) -> Unit,
     onSubmit: () -> Unit,
     onClear: () -> Unit,
+    onSelectSuggestion: (String) -> Unit,
     onPlay: (YoutubeTrack) -> Unit,
     onPlayVideo: (YoutubeTrack) -> Unit,
     onDownload: (YoutubeTrack, String) -> Unit,
@@ -107,7 +108,12 @@ fun YoutubeScreen(
             )
         }
 
-        if (state.showingResults) {
+        if (state.query.isNotBlank() && state.suggestions.isNotEmpty() && !state.searching) {
+            SuggestionList(
+                suggestions = state.suggestions,
+                onClick = onSelectSuggestion,
+            )
+        } else if (state.showingResults) {
             YoutubeResults(
                 state = state,
                 contentPadding = contentPadding,
@@ -126,6 +132,41 @@ fun YoutubeScreen(
                 onOpenGenre = onOpenGenre,
                 onRetry = onRetry,
             )
+        }
+    }
+}
+
+@Composable
+private fun SuggestionList(
+    suggestions: List<String>,
+    onClick: (String) -> Unit,
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(vertical = AlexaSpacing.xs),
+    ) {
+        items(suggestions, key = { it }) { suggestion ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onClick(suggestion) }
+                    .padding(horizontal = AlexaSpacing.lg, vertical = AlexaSpacing.md),
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_search),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
+                )
+                Text(
+                    text = suggestion,
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(start = AlexaSpacing.md),
+                )
+            }
         }
     }
 }

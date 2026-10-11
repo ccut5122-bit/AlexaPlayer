@@ -26,3 +26,18 @@ object StreamHeaders {
 
     fun of(url: String): Map<String, String> = headersByUrl[url] ?: emptyMap()
 }
+
+/**
+ * Maps the synthetic media id of a streamed song back to its YouTube video id, so the UI
+ * can re-resolve the same track at a different quality without another search.
+ */
+object StreamIds {
+
+    private val videoIdBySong = ConcurrentHashMap<Long, String>()
+
+    fun put(songId: Long, videoId: String) {
+        if (videoId.isNotBlank()) videoIdBySong[songId] = videoId
+    }
+
+    fun of(songId: Long): String? = videoIdBySong[songId]
+}

@@ -281,4 +281,4 @@ private fun SettingsSwitchRow(
     }
 }
 
-private val VIDEO_QUALITIES = listOf(480, 720, 1080, 2160)
+private val VIDEO_QUALITIES = listOf(480, 720, 1080, 1440, 2160)

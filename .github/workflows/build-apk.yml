@@ -34,6 +34,9 @@ jobs:
         with:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
 
+      - name: Generate launcher icons
+        run: bash scripts/make_icons.sh
+
       - name: Run unit tests
         run: ./gradlew --no-daemon testDebugUnitTest
 

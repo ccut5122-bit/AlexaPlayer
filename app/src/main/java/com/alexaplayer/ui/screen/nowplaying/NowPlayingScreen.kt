@@ -17,13 +17,21 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
@@ -70,6 +78,8 @@ fun NowPlayingScreen(
     onCycleRepeat: () -> Unit,
     onToggleFavorite: (Song) -> Unit,
     onPlayUpNext: (Int) -> Unit,
+    onSelectQuality: (Int) -> Unit,
+    onFullscreen: (() -> Unit)?,
     errorText: String?,
     playerProvider: () -> Player?,
     modifier: Modifier = Modifier,
@@ -94,6 +104,19 @@ fun NowPlayingScreen(
                 title = stringResource(R.string.now_playing_title),
                 onBack = onBack,
                 actions = {
+                    if (onFullscreen != null) {
+                        AlexaIconButton(
+                            iconRes = R.drawable.ic_fullscreen,
+                            contentDescription = stringResource(R.string.cd_fullscreen),
+                            onClick = onFullscreen,
+                        )
+                    }
+                    if (song != null && song.isStream) {
+                        QualityMenu(
+                            current = state.videoQuality,
+                            onSelect = onSelectQuality,
+                        )
+                    }
                     AlexaIconButton(
                         iconRes = R.drawable.ic_queue,
                         contentDescription = stringResource(R.string.cd_queue),
@@ -365,6 +388,62 @@ private fun PlayPauseButton(
 
 private val PLAY_BUTTON_SIZE = 64.dp
 private const val UP_NEXT_PREVIEW = 5
+
+/** Resolutions offered in the in-player quality menu; 2160 is 4K. */
+private val PLAYER_QUALITIES = listOf(480, 720, 1080, 1440, 2160)
+
+/** Compact "720p" dropdown that re-resolves the stream at the chosen resolution. */
+@Composable
+private fun QualityMenu(
+    current: Int,
+    onSelect: (Int) -> Unit,
+) {
+    var open by remember { mutableStateOf(false) }
+    Box(contentAlignment = Alignment.Center) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .clip(RoundedCornerShape(AlexaRadius.pill))
+                .clickable(
+                    role = Role.Button,
+                    onClickLabel = stringResource(R.string.cd_quality),
+                ) { open = true }
+                .padding(horizontal = AlexaSpacing.sm, vertical = AlexaSpacing.xs),
+        ) {
+            com.alexaplayer.core.designsystem.component.DecorativeIcon(
+                iconRes = R.drawable.ic_hd,
+                tint = MaterialTheme.colorScheme.onSurface,
+                size = 20.dp,
+            )
+            Text(
+                text = "${current}p",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(start = 4.dp),
+            )
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            PLAYER_QUALITIES.forEach { height ->
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            if (height >= 2160) "${height}p (4K)" else "${height}p",
+                            color = if (height == current) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            },
+                        )
+                    },
+                    onClick = {
+                        open = false
+                        onSelect(height)
+                    },
+                )
+            }
+        }
+    }
+}
 
 /**
  * Renders the playing stream's video on top of the artwork. A texture surface stays

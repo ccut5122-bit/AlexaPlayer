@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /** One horizontal carousel: a title plus the tracks behind it. */
@@ -33,6 +34,8 @@ data class YoutubeSection(
 
 data class YoutubeUiState(
     val query: String = "",
+    /** Live YouTube autocomplete for the query, shown as a dropdown under the search bar. */
+    val suggestions: List<String> = emptyList(),
     /** Always-available home content, built from a handful of curated search terms. */
     val sections: List<YoutubeSection> = emptyList(),
     val loadingHome: Boolean = false,
@@ -69,6 +72,7 @@ class YoutubeViewModel(
     val uiState: StateFlow<YoutubeUiState> = _uiState.asStateFlow()
 
     private var searchJob: Job? = null
+    private var suggestJob: Job? = null
     private var homeLoaded = false
 
     init {
@@ -121,12 +125,34 @@ class YoutubeViewModel(
 
     fun onQueryChange(value: String) {
         _uiState.value = _uiState.value.copy(query = value, error = null)
+        suggestJob?.cancel()
+        val trimmed = value.trim()
+        if (trimmed.length < 2) {
+            _uiState.value = _uiState.value.copy(suggestions = emptyList())
+            return
+        }
+        suggestJob = viewModelScope.launch {
+            delay(SUGGEST_DEBOUNCE_MS)
+            val items = runCatching { bridge.suggest(trimmed) }.getOrDefault(emptyList())
+            // Drop a stale response if the user kept typing.
+            if (_uiState.value.query == value) {
+                _uiState.value = _uiState.value.copy(suggestions = items)
+            }
+        }
+    }
+
+    /** Tapping a suggestion runs it immediately, like YouTube does. */
+    fun selectSuggestion(value: String) {
+        _uiState.value = _uiState.value.copy(query = value, suggestions = emptyList())
+        submit()
     }
 
     fun clearQuery() {
         searchJob?.cancel()
+        suggestJob?.cancel()
         _uiState.value = _uiState.value.copy(
             query = "",
+            suggestions = emptyList(),
             results = emptyList(),
             hasSearched = false,
             searching = false,
@@ -145,8 +171,10 @@ class YoutubeViewModel(
      * YouTube, and the round trip costs seconds anyway.
      */
     fun submit() {
+        suggestJob?.cancel()
+        _uiState.value = _uiState.value.copy(suggestions = emptyList())
         val query = _uiState.value.query.trim()
-        if (query.isEmpty()) return
+        if (query.isBlank()) return
         searchJob?.cancel()
         searchJob = viewModelScope.launch {
             _uiState.value = _uiState.value.copy(searching = true, hasSearched = true, error = null)
@@ -205,23 +233,36 @@ class YoutubeViewModel(
     }
 
     /**
-     * YouTube-style autoplay: after the tapped song starts, quietly resolve a few similar
-     * songs and append them, so Next and continuous playback work right away.
+     * YouTube-style endless autoplay. After the tapped song starts it keeps resolving batches
+     * of related tracks and appending them, chaining each batch off the previous one, until
+     * the queue holds [AUTOPLAY_MAX] upcoming songs. Next and continuous playback then work
+     * far past the first handful of songs.
      */
-    private fun startAutoplay(track: YoutubeTrack) {
+    private fun startAutoplay(seed: YoutubeTrack) {
         autoplayJob?.cancel()
         autoplayJob = viewModelScope.launch {
             try {
-                val related = bridge.search("${track.title} ${track.channel}".trim(), limit = 8)
                 val height = videoHeight()
+                val seen = mutableSetOf(seed.videoId)
+                var currentSeed = seed
                 var queued = 0
-                for (item in related.results) {
-                    if (queued >= AUTOPLAY_LIMIT) break
-                    if (item.videoId == track.videoId) continue
-                    val song = runCatching { bridge.toSong(bridge.resolve(item.videoId, height)) }
-                        .getOrNull() ?: continue
-                    playerConnection.addToQueue(listOf(song))
-                    queued++
+                while (isActive && queued < AUTOPLAY_MAX) {
+                    val related = runCatching {
+                        bridge.search("${currentSeed.title} ${currentSeed.channel}".trim(), limit = 12)
+                    }.getOrNull() ?: break
+
+                    var added = 0
+                    for (item in related.results) {
+                        if (queued >= AUTOPLAY_MAX) break
+                        if (!seen.add(item.videoId)) continue
+                        val song = runCatching { bridge.toSong(bridge.resolve(item.videoId, height)) }
+                            .getOrNull() ?: continue
+                        playerConnection.addToQueue(listOf(song))
+                        currentSeed = item
+                        queued++
+                        added++
+                    }
+                    if (added == 0) break
                 }
             } catch (cancellation: CancellationException) {
                 throw cancellation
@@ -330,7 +371,8 @@ class YoutubeViewModel(
     }
 
     companion object {
-        private const val AUTOPLAY_LIMIT = 5
+        private const val AUTOPLAY_MAX = 25
+        private const val SUGGEST_DEBOUNCE_MS = 250L
 
         fun factory(container: AppContainer): ViewModelProvider.Factory = viewModelFactory {
             initializer {
