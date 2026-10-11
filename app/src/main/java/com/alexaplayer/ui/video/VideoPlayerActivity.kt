@@ -24,26 +24,41 @@ class VideoPlayerActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        hideSystemBars()
-        setContentView(R.layout.activity_video_player)
+        try {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            hideSystemBars()
+            setContentView(R.layout.activity_video_player)
 
-        val url = intent.getStringExtra(EXTRA_URL)
-        if (url.isNullOrBlank()) {
-            finish()
-            return
-        }
+            val url = intent.getStringExtra(EXTRA_URL)
+            if (url.isNullOrBlank()) {
+                finish()
+                return
+            }
 
-        val playerView = findViewById<androidx.media3.ui.PlayerView>(R.id.player_view)
-        player = ExoPlayer.Builder(this)
-            .setMediaSourceFactory(mediaSourceFactory(url))
-            .build()
-            .also { exo ->
+            val playerView = findViewById<androidx.media3.ui.PlayerView>(R.id.player_view)
+            // Prefer a source factory that replays the extractor's request headers; fall back to
+            // the default player if building it fails, so fullscreen still works regardless.
+            val builder = runCatching {
+                ExoPlayer.Builder(this).setMediaSourceFactory(mediaSourceFactory(url))
+            }.getOrElse {
+                com.alexaplayer.util.CrashLog.write(this, it, "VideoPlayerFactory")
+                ExoPlayer.Builder(this)
+            }
+            player = builder.build().also { exo ->
                 exo.setMediaItem(MediaItem.fromUri(url))
                 exo.prepare()
                 exo.playWhenReady = true
                 playerView.player = exo
             }
+        } catch (error: Throwable) {
+            com.alexaplayer.util.CrashLog.write(this, error, "VideoPlayer")
+            android.widget.Toast.makeText(
+                this,
+                "Video could not be opened: ${error.message ?: error::class.java.simpleName}",
+                android.widget.Toast.LENGTH_LONG,
+            ).show()
+            finish()
+        }
     }
 
     /** YouTube needs back the same request headers the extractor signed the URL with. */

@@ -162,7 +162,27 @@ def search(query, limit=25):
 
 def suggest(query, limit=10):
     """YouTube's own search autocomplete (the dropdown suggestions), via the public
-    complete/search endpoint. Cheap and fast compared to a full search."""
+    complete/search endpoint. Cheap and fast compared to a full search.
+
+    The endpoint only answers for certain ``client`` values: ``firefox`` now returns
+    HTTP 400, and ``youtube`` wraps its JSON in ``window.google.ac.h(...)`` with each
+    entry shaped like ``[text, score, ...]``. Several clients are tried so a single
+    one being blocked upstream never means "no suggestions"."""
+
+    def parse(raw):
+        text = raw.strip()
+        # Strip a JSONP callback wrapper like window.google.ac.h( ... ).
+        if "(" in text and text.endswith(")"):
+            text = text[text.find("(") + 1:text.rfind(")")]
+        data = json.loads(text)
+        items = data[1] if isinstance(data, list) and len(data) > 1 else []
+        out = []
+        for x in items:
+            if isinstance(x, str):
+                out.append(x)
+            elif isinstance(x, list) and x and isinstance(x[0], str):
+                out.append(x[0])
+        return out
 
     def job():
         q = str(query or "").strip()
@@ -171,16 +191,21 @@ def suggest(query, limit=10):
         import urllib.parse
         import urllib.request
 
-        url = (
-            "https://suggestqueries-clients6.youtube.com/complete/search"
-            "?client=firefox&ds=yt&q=" + urllib.parse.quote(q)
-        )
-        req = urllib.request.Request(url, headers={"User-Agent": SEARCH_UA})
-        with urllib.request.urlopen(req, timeout=6) as resp:
-            data = json.loads(resp.read().decode("utf-8", "replace"))
-        items = data[1] if isinstance(data, list) and len(data) > 1 else []
-        out = [str(x) for x in items if isinstance(x, str)][: int(limit)]
-        return {"suggestions": out}
+        quoted = urllib.parse.quote(q)
+        for client in ("youtube", "youtube-reduced", "firefox"):
+            url = (
+                "https://suggestqueries-clients6.youtube.com/complete/search"
+                "?ds=yt&hl=en&client=%s&q=%s" % (client, quoted)
+            )
+            try:
+                req = urllib.request.Request(url, headers={"User-Agent": SEARCH_UA})
+                with urllib.request.urlopen(req, timeout=6) as resp:
+                    out = parse(resp.read().decode("utf-8", "replace"))
+                if out:
+                    return {"suggestions": [str(x) for x in out][: int(limit)]}
+            except Exception:  # noqa: BLE001 - try the next client
+                continue
+        return {"suggestions": []}
 
     return _run(job)
 

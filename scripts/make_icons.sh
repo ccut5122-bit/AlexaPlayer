@@ -25,23 +25,34 @@ density_sizes() {
   esac
 }
 
+# Adaptive icons show only the middle ~66/108 of the canvas, so the artwork has to be
+# scaled down into that safe zone or it reads as "zoomed in" on modern launchers.
+SAFE_PERCENT=60
+
 for d in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
   set -- $(density_sizes "$d")
   LEGACY=$1
   ADAPTIVE=$2
+  SAFE=$((ADAPTIVE * SAFE_PERCENT / 100))
   OUT="app/src/main/res/mipmap-$d"
   mkdir -p "$OUT"
 
-  # Legacy (pre-Android 8) square + circular icons.
+  # Legacy (pre-Android 8) square icon keeps the full artwork.
   "$IMG" "$SRC" -resize "${LEGACY}x${LEGACY}" "$OUT/ic_launcher.png"
-  "$IMG" "$SRC" -resize "${LEGACY}x${LEGACY}" -alpha set \
+
+  # Legacy circular icon: shrink a touch first so the round mask never clips the logo.
+  "$IMG" "$SRC" -resize "$((LEGACY * 82 / 100))x$((LEGACY * 82 / 100))" \
+    -gravity center -background none -extent "${LEGACY}x${LEGACY}" -alpha set \
     \( -size "${LEGACY}x${LEGACY}" xc:none -fill white \
        -draw "circle $((LEGACY/2)),$((LEGACY/2)) $((LEGACY/2)),0" \) \
     -compose DstIn -composite "$OUT/ic_launcher_round.png"
 
-  # Adaptive icon: full-bleed artwork as the background, empty foreground on top.
-  "$IMG" "$SRC" -resize "${ADAPTIVE}x${ADAPTIVE}" "$OUT/ic_launcher_background.png"
-  "$IMG" -size "${ADAPTIVE}x${ADAPTIVE}" xc:none "$OUT/ic_launcher_foreground.png"
+  # Adaptive icon: an ambient blurred backdrop plus the logo centred inside the safe zone.
+  "$IMG" "$SRC" -resize "${ADAPTIVE}x${ADAPTIVE}^" -gravity center \
+    -extent "${ADAPTIVE}x${ADAPTIVE}" -blur 0x18 "$OUT/ic_launcher_background.png"
+  "$IMG" "$SRC" -resize "${SAFE}x${SAFE}" \
+    -gravity center -background none -extent "${ADAPTIVE}x${ADAPTIVE}" \
+    "$OUT/ic_launcher_foreground.png"
 done
 
 echo "launcher icons generated"

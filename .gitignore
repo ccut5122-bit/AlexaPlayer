@@ -14,3 +14,7 @@ local.properties
 *.keystore
 *.jks
 keystore.properties
+
+# Python bytecode cached next to the bundled sources
+__pycache__/
+*.pyc
