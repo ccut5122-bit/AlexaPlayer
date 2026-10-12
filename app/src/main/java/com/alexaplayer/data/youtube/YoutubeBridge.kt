@@ -41,6 +41,14 @@ data class ResolvedStream(
     val headers: Map<String, String> = emptyMap(),
 )
 
+/** A video-only stream plus an optional separate audio track, for on-the-fly merging. */
+data class ResolvedDash(
+    val videoUrl: String,
+    val audioUrl: String?,
+    val title: String,
+    val thumbnailUrl: String,
+)
+
 /** A finished download: absolute path on disk plus what kind of file it is. */
 data class DownloadResult(
     val path: String,
@@ -150,6 +158,30 @@ class YoutubeBridge(context: Context) {
             )
         }
 
+    /**
+     * A video-only + audio-only pair for the full-screen player, so resolutions above the
+     * 720p muxed ceiling (1080p, 1440p, 4K) can be merged and actually displayed.
+     */
+    suspend fun resolveVideoDash(videoId: String, maxHeight: Int): ResolvedDash =
+        withContext(Dispatchers.IO) {
+            val payload = JSONObject(call("resolve_video_dash", videoId, maxHeight))
+            val error = payload.optString("error")
+            if (error.isNotEmpty()) throw YoutubeException(error)
+            val videoUrl = payload.optString("video_url")
+            if (videoUrl.isBlank()) throw YoutubeException("No playable video stream")
+            val videoHeaders = payload.optJSONObject("video_headers")?.toStringMap() ?: emptyMap()
+            val audioUrl = payload.optString("audio_url").takeIf { it.isNotBlank() && it != videoUrl }
+            val audioHeaders = payload.optJSONObject("audio_headers")?.toStringMap() ?: emptyMap()
+            com.alexaplayer.playback.StreamHeaders.put(videoUrl, videoHeaders)
+            if (audioUrl != null) com.alexaplayer.playback.StreamHeaders.put(audioUrl, audioHeaders)
+            ResolvedDash(
+                videoUrl = videoUrl,
+                audioUrl = audioUrl,
+                title = payload.optString("title"),
+                thumbnailUrl = payload.optString("thumbnail"),
+            )
+        }
+
     /** Video songs play as a muxed mp4, streamed into the full-screen player. */
     suspend fun resolveVideo(videoId: String, maxHeight: Int): ResolvedStream =
         withContext(Dispatchers.IO) {
@@ -183,6 +215,25 @@ class YoutubeBridge(context: Context) {
         withContext(Dispatchers.IO) {
             tempDownloadDir.mkdirs()
             val payload = JSONObject(call("download", videoId, kind, token, tempDownloadDir.absolutePath, maxHeight))
+            val error = payload.optString("error")
+            if (error.isNotEmpty()) throw YoutubeException(error)
+
+            val temp = java.io.File(payload.optString("path"))
+            val title = payload.optString("title")
+            val ext = payload.optString("ext")
+            val published = publishToStorage(temp, title, ext)
+            DownloadResult(
+                path = published.absolutePath,
+                title = title,
+                ext = ext,
+            )
+        }
+
+    /** Downloads an arbitrary pasted link (YouTube, Instagram, ...) and publishes it. */
+    suspend fun downloadUrl(url: String, kind: String, token: String, maxHeight: Int): DownloadResult =
+        withContext(Dispatchers.IO) {
+            tempDownloadDir.mkdirs()
+            val payload = JSONObject(call("download_url", url, kind, token, tempDownloadDir.absolutePath, maxHeight))
             val error = payload.optString("error")
             if (error.isNotEmpty()) throw YoutubeException(error)
 

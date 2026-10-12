@@ -9,18 +9,29 @@ import android.view.View
 import android.view.WindowManager
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.MediaSource
+import androidx.media3.exoplayer.source.MergingMediaSource
+import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import com.alexaplayer.AlexaPlayerApp
 import com.alexaplayer.R
 
 /**
  * Full-screen video player used for YouTube "video songs". It owns a plain ExoPlayer of
  * its own (separate from the background audio service) so navigating back returns you to
  * whatever the audio session was playing.
+ *
+ * YouTube only ships muxed files up to 720p, so for anything higher the activity builds a
+ * [MergingMediaSource] from a video-only and an audio-only track. While it is open the
+ * background audio is paused, otherwise the same song would play twice at once.
  */
 @OptIn(UnstableApi::class)
 class VideoPlayerActivity : Activity() {
 
     private var player: ExoPlayer? = null
+    private var resumeMusicOnExit = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -31,23 +42,27 @@ class VideoPlayerActivity : Activity() {
             // insets controller) is null before setContentView on several OEM roms.
             hideSystemBars()
 
-            val url = intent.getStringExtra(EXTRA_URL)
-            if (url.isNullOrBlank()) {
+            val videoUrl = intent.getStringExtra(EXTRA_URL)
+            if (videoUrl.isNullOrBlank()) {
                 finish()
                 return
             }
+            val audioUrl = intent.getStringExtra(EXTRA_AUDIO_URL)
+
+            // Stop the background session so only the video is heard.
+            val connection = (application as? AlexaPlayerApp)?.container?.playerConnection
+            resumeMusicOnExit = connection?.state?.value?.isPlaying == true
+            if (resumeMusicOnExit) connection?.pause()
 
             val playerView = findViewById<androidx.media3.ui.PlayerView>(R.id.player_view)
-            // Prefer a source factory that replays the extractor's request headers; fall back to
-            // the default player if building it fails, so fullscreen still works regardless.
-            val builder = runCatching {
-                ExoPlayer.Builder(this).setMediaSourceFactory(mediaSourceFactory(url))
-            }.getOrElse {
-                com.alexaplayer.util.CrashLog.write(this, it, "VideoPlayerFactory")
-                ExoPlayer.Builder(this)
-            }
-            player = builder.build().also { exo ->
-                exo.setMediaItem(MediaItem.fromUri(url))
+            val source = runCatching { buildSource(videoUrl, audioUrl) }
+                .getOrElse {
+                    com.alexaplayer.util.CrashLog.write(this, it, "VideoPlayerSource")
+                    ProgressiveMediaSource.Factory(DefaultDataSource.Factory(this))
+                        .createMediaSource(MediaItem.fromUri(videoUrl))
+                }
+            player = ExoPlayer.Builder(this).build().also { exo ->
+                exo.setMediaSource(source)
                 exo.prepare()
                 exo.playWhenReady = true
                 playerView.player = exo
@@ -63,14 +78,23 @@ class VideoPlayerActivity : Activity() {
         }
     }
 
-    /** YouTube needs back the same request headers the extractor signed the URL with. */
-    private fun mediaSourceFactory(url: String): androidx.media3.exoplayer.source.MediaSource.Factory {
-        val httpFactory = androidx.media3.datasource.DefaultHttpDataSource.Factory()
+    /** A merged video+audio source, or just the single source when there is no extra track. */
+    private fun buildSource(videoUrl: String, audioUrl: String?): MediaSource {
+        val video = sourceFor(videoUrl)
+        return if (audioUrl.isNullOrBlank() || audioUrl == videoUrl) {
+            video
+        } else {
+            MergingMediaSource(video, sourceFor(audioUrl))
+        }
+    }
+
+    /** Progressive source with the exact request headers the extractor signed the URL with. */
+    private fun sourceFor(url: String): MediaSource {
+        val httpFactory = DefaultHttpDataSource.Factory()
         val headers = com.alexaplayer.playback.StreamHeaders.of(url)
         if (headers.isNotEmpty()) httpFactory.setDefaultRequestProperties(headers)
-        return androidx.media3.exoplayer.source.DefaultMediaSourceFactory(
-            androidx.media3.datasource.DefaultDataSource.Factory(this, httpFactory),
-        )
+        return ProgressiveMediaSource.Factory(DefaultDataSource.Factory(this, httpFactory))
+            .createMediaSource(MediaItem.fromUri(url))
     }
 
     private fun hideSystemBars() {
@@ -101,26 +125,35 @@ class VideoPlayerActivity : Activity() {
     @Suppress("DEPRECATION")
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) {
-            runCatching {
-                window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-            }
+        runCatching {
+            if (hasFocus) window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
         }
     }
 
     override fun onDestroy() {
         player?.release()
         player = null
+        // Hand the song back to the audio session when the user leaves fullscreen.
+        if (resumeMusicOnExit) {
+            (application as? AlexaPlayerApp)?.container?.playerConnection?.play()
+        }
         super.onDestroy()
     }
 
     companion object {
         const val EXTRA_URL = "video_url"
+        const val EXTRA_AUDIO_URL = "video_audio_url"
         const val EXTRA_TITLE = "video_title"
 
         fun intent(context: Context, url: String, title: String): Intent =
             Intent(context, VideoPlayerActivity::class.java)
                 .putExtra(EXTRA_URL, url)
+                .putExtra(EXTRA_TITLE, title)
+
+        fun intent(context: Context, videoUrl: String, audioUrl: String?, title: String): Intent =
+            Intent(context, VideoPlayerActivity::class.java)
+                .putExtra(EXTRA_URL, videoUrl)
+                .putExtra(EXTRA_AUDIO_URL, audioUrl)
                 .putExtra(EXTRA_TITLE, title)
     }
 }

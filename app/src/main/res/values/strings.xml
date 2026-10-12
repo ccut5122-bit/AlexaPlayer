@@ -307,4 +307,18 @@
     <string name="action_favorite_add">Add to favourites</string>
     <string name="action_favorite_remove">Remove from favourites</string>
     <string name="msg_rescan_complete">Library scan finished</string>
+
+    <string name="nav_download">Download</string>
+    <string name="downloader_title">Downloader</string>
+    <string name="downloader_subtitle">Paste a link and grab it offline</string>
+    <string name="downloader_youtube_section">YouTube</string>
+    <string name="downloader_instagram_section">Instagram</string>
+    <string name="downloader_youtube_hint">Paste a YouTube video link</string>
+    <string name="downloader_instagram_hint">Paste a reel, video or photo link</string>
+    <string name="downloader_quality">Video quality</string>
+    <string name="downloader_get">Download</string>
+    <string name="downloader_paste_first">Paste a link first</string>
+    <string name="downloader_saved">Saved to Download/AlexaPlayer</string>
+    <string name="downloader_in_progress">Downloading…</string>
+    <string name="downloader_failed">Failed</string>
 </resources>

@@ -147,6 +147,30 @@ class NowPlayingViewModel(
         }
     }
 
+    /**
+     * Resolves the highest-quality (up to the chosen) video/audio pair for the current
+     * track and hands it to [onReady] for the full-screen player. Falls back to the plain
+     * stream URL when a separate pair is unavailable.
+     */
+    fun openFullscreen(onReady: (videoUrl: String, audioUrl: String?, title: String) -> Unit) {
+        val song = uiState.value.song ?: return
+        if (!song.isStream) return
+        val videoId = com.alexaplayer.playback.StreamIds.of(song.id)
+        val height = uiState.value.videoQuality
+        if (videoId == null) {
+            onReady(song.uri, null, song.title)
+            return
+        }
+        viewModelScope.launch {
+            try {
+                val dash = bridge.resolveVideoDash(videoId, height)
+                onReady(dash.videoUrl, dash.audioUrl, dash.title.ifBlank { song.title })
+            } catch (error: Exception) {
+                onReady(song.uri, null, song.title)
+            }
+        }
+    }
+
     fun playUpNextIndex(index: Int) {
         val playback = playerConnection.state.value
         val target = playback.queueIndex + 1 + index

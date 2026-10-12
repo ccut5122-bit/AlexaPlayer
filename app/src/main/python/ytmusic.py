@@ -312,6 +312,168 @@ def resolve_video(video_id, max_height=1080, video_url=None):
     return _stream(target, _cap_format(int(max_height)))
 
 
+def resolve_video_dash(video_id, max_height=2160):
+    """Separate video-only and audio-only streams so Media3 can merge them on the fly.
+
+    YouTube only offers muxed (single-file) video up to 720p; everything above that -
+    1080p, 1440p, 4K - exists only as a video-only track. Returning both lets the player
+    combine them (MergingMediaSource) and actually show the chosen resolution.
+
+    Falls back to a plain muxed stream when a separate pair is unavailable."""
+
+    def job():
+        import yt_dlp
+
+        target = "https://www.youtube.com/watch?v=%s" % video_id
+        h = max(240, int(max_height))
+        vfmt = "bestvideo[height<=%d][ext=mp4]/bestvideo[height<=%d]/best[height<=%d]" % (h, h, h)
+        afmt = "bestaudio[ext=m4a]/bestaudio/best"
+        opts = dict(_device_opts("%s+%s" % (vfmt, afmt)), extract_flat=False)
+
+        info = None
+        last_error = None
+        for client in _CLIENTS:
+            attempt = dict(opts)
+            attempt["extractor_args"] = {"youtube": {"player_client": [client]}}
+            try:
+                with yt_dlp.YoutubeDL(attempt) as ydl:
+                    info = ydl.extract_info(target, download=False)
+                break
+            except Exception as exc:  # noqa: BLE001 - try the next client
+                info = None
+                last_error = exc
+                continue
+
+        if info is None:
+            # Last resort: whatever single file we can get.
+            return json.loads(_stream(target, _cap_format(h)))
+
+        formats = info.get("requested_formats") or []
+        video = next((f for f in formats if f.get("vcodec") not in (None, "none")), None)
+        audio = next((f for f in formats if f.get("acodec") not in (None, "none")), None)
+
+        if video is None or audio is None:
+            # yt-dlp picked a single muxed file; use it as-is.
+            url = (video or audio or info).get("url") or info.get("url")
+            headers = (video or info).get("http_headers") or info.get("http_headers") or {}
+            return {
+                "video_url": url,
+                "video_headers": {str(k): str(v) for k, v in (headers or {}).items()},
+                "title": info.get("title") or "",
+                "thumbnail": info.get("thumbnail") or "",
+                "merged": False,
+            }
+
+        return {
+            "video_url": video.get("url"),
+            "video_headers": {str(k): str(v) for k, v in (video.get("http_headers") or {}).items()},
+            "audio_url": audio.get("url"),
+            "audio_headers": {str(k): str(v) for k, v in (audio.get("http_headers") or {}).items()},
+            "id": info.get("id"),
+            "title": info.get("title") or "",
+            "channel": info.get("channel") or info.get("uploader") or "",
+            "duration": info.get("duration"),
+            "thumbnail": info.get("thumbnail") or "",
+        }
+
+    return _run(job)
+
+
+def _is_instagram(url):
+    return "instagram.com" in str(url).lower()
+
+
+def download_url(url, kind, token, outdir, max_height=1080):
+    """Download any supported link (YouTube, Instagram, ...) into outdir.
+
+    kind: "audio" grabs the best audio track, "video"/"auto" grabs the best single file
+    up to [max_height]. Instagram photos have no video track, so an image URL is pulled
+    from the page as a last resort. Progress goes to _PROGRESS under [token]."""
+
+    def job():
+        import yt_dlp
+
+        link = str(url or "").strip()
+        if not link.startswith(("http://", "https://")):
+            raise RuntimeError("Enter a full http(s) link")
+
+        cap = max(240, int(max_height))
+        if kind == "audio":
+            formats = ("bestaudio/best", "bestaudio", "best")
+        else:
+            formats = (
+                "best[height<=%d][ext=mp4]" % cap,
+                "best[height<=%d]" % cap,
+                "best[ext=mp4]",
+                "best",
+            )
+
+        info = None
+        last_error = None
+        for fmt in formats:
+            opts = dict(
+                _device_opts(fmt),
+                skip_download=False,
+                noplaylist=True,
+                outtmpl=os.path.join(str(outdir), "%(title).120s-%(id)s.%(ext)s"),
+                progress_hooks=[_progress_hook(str(token))],
+            )
+            try:
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    info = ydl.extract_info(link, download=True)
+                break
+            except Exception as exc:  # noqa: BLE001 - try the next format
+                last_error = exc
+                info = None
+                continue
+
+        if info is None:
+            if _is_instagram(link):
+                image = _download_instagram_image(link, str(outdir), str(token))
+                if image:
+                    return image
+            raise RuntimeError("Download failed (%s)" % (last_error or "unknown"))
+
+        requested = info.get("requested_downloads") or []
+        path = requested[0].get("filepath") if requested else info.get("filepath")
+        if not path or not os.path.exists(path):
+            raise RuntimeError("Download produced no file")
+
+        _PROGRESS[str(token)] = {"status": "finished", "path": path, "title": info.get("title") or ""}
+        return {
+            "path": path,
+            "title": info.get("title") or "",
+            "ext": os.path.splitext(path)[1].lstrip(".") or "mp4",
+        }
+
+    return _run(job)
+
+
+def _download_instagram_image(link, outdir, token):
+    """Instagram photos: read the page's og:image and save it. Best effort - returns None
+    when the page cannot be parsed."""
+    try:
+        import re
+        import urllib.request
+
+        req = urllib.request.Request(link, headers={"User-Agent": SEARCH_UA})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            html = resp.read().decode("utf-8", "replace")
+        match = re.search(r'<meta[^>]+property="og:image"[^>]+content="([^"]+)"', html)
+        if not match:
+            return None
+        image_url = match.group(1).replace("&amp;", "&")
+        os.makedirs(outdir, exist_ok=True)
+        dest = os.path.join(outdir, "instagram-%d.jpg" % int(time.time()))
+        req2 = urllib.request.Request(image_url, headers={"User-Agent": SEARCH_UA})
+        with urllib.request.urlopen(req2, timeout=15) as img, open(dest, "wb") as out:
+            out.write(img.read())
+        _PROGRESS[token] = {"status": "finished", "path": dest, "title": "Instagram photo"}
+        return {"path": dest, "title": "Instagram photo", "ext": "jpg"}
+    except Exception:  # noqa: BLE001 - best effort
+        return None
+
+
 def download_progress(token):
     """Small JSON for the progress poll; the download thread keeps this updated."""
     return json.dumps(_PROGRESS.get(str(token)) or {"status": "unknown"})

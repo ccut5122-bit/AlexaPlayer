@@ -287,12 +287,13 @@ class YoutubeViewModel(
     }
 
     /** Same flow but for the muxed video stream, funnelled into the full-screen player. */
-    fun playVideo(track: YoutubeTrack, onReady: (url: String, title: String) -> Unit) {
+    fun playVideo(track: YoutubeTrack, onReady: (videoUrl: String, audioUrl: String?, title: String) -> Unit) {
         if (_uiState.value.resolvingId != null) return
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(resolvingId = track.videoId, error = null)
             try {
-                onReady(bridge.resolveVideo(track.videoId, videoHeight()).url, track.title)
+                val dash = bridge.resolveVideoDash(track.videoId, videoHeight())
+                onReady(dash.videoUrl, dash.audioUrl, dash.title.ifBlank { track.title })
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (error: Exception) {

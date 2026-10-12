@@ -6,6 +6,7 @@ import com.alexaplayer.R
 object Routes {
     const val HOME = "home"
     const val YOUTUBE = "youtube"
+    const val DOWNLOADER = "downloader"
     const val LIBRARY = "library"
     const val PLAYLISTS = "playlists"
     const val SETTINGS = "settings"
@@ -42,6 +43,7 @@ enum class TopLevelDestination(
 ) {
     HOME(Routes.HOME, R.drawable.ic_home, R.string.nav_home),
     YOUTUBE(Routes.YOUTUBE, R.drawable.ic_headphones, R.string.nav_youtube),
+    DOWNLOADER(Routes.DOWNLOADER, R.drawable.ic_download, R.string.nav_download),
     LIBRARY(Routes.LIBRARY, R.drawable.ic_library, R.string.nav_library),
     PLAYLISTS(Routes.PLAYLISTS, R.drawable.ic_playlists, R.string.nav_playlists),
     SETTINGS(Routes.SETTINGS, R.drawable.ic_settings, R.string.nav_settings),

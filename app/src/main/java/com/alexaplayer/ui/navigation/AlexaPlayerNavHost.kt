@@ -42,6 +42,8 @@ import com.alexaplayer.ui.component.OptionsSheet
 import com.alexaplayer.ui.component.PickSongsSheet
 import com.alexaplayer.ui.component.SheetOption
 import com.alexaplayer.ui.screen.detail.DetailScreen
+import com.alexaplayer.ui.screen.downloader.DownloaderScreen
+import com.alexaplayer.ui.viewmodel.DownloaderViewModel
 import com.alexaplayer.ui.screen.home.HomeScreen
 import com.alexaplayer.ui.screen.library.LibraryScreen
 import com.alexaplayer.ui.screen.nowplaying.NowPlayingScreen
@@ -173,15 +175,29 @@ fun AlexaPlayerNavHost(container: AppContainer, modifier: Modifier = Modifier) {
                     onOpenGenre = vm::openGenre,
                     onRetry = vm::retry,
                     onPlayVideo = { track ->
-                        vm.playVideo(track) { url, title ->
+                        vm.playVideo(track) { videoUrl, audioUrl, title ->
                             context.startActivity(
-                                VideoPlayerActivity.intent(context, url, title),
+                                VideoPlayerActivity.intent(context, videoUrl, audioUrl, title),
                             )
                         }
                     },
                     onDownload = { track, kind ->
                         vm.startDownload(track, kind)
                     },
+                )
+            }
+
+            composable(Routes.DOWNLOADER) {
+                val vm: DownloaderViewModel = viewModel(factory = DownloaderViewModel.factory(container))
+                val state by vm.uiState.collectAsStateWithLifecycle()
+                DownloaderScreen(
+                    state = state,
+                    contentPadding = padding,
+                    onYoutubeUrlChange = vm::onYoutubeUrlChange,
+                    onInstagramUrlChange = vm::onInstagramUrlChange,
+                    onQuality = vm::setQuality,
+                    onDownloadYoutube = vm::downloadYoutube,
+                    onDownloadInstagram = vm::downloadInstagram,
                 )
             }
 
@@ -461,15 +477,17 @@ fun AlexaPlayerNavHost(container: AppContainer, modifier: Modifier = Modifier) {
                     },
                     onPlayUpNext = vm::playUpNextIndex,
                     onSelectQuality = vm::setQuality,
-                    onFullscreen = state.song
-                        ?.takeIf { it.isStream }
-                        ?.let { song ->
-                            {
+                    onFullscreen = if (state.song?.isStream == true) {
+                        {
+                            vm.openFullscreen { videoUrl, audioUrl, title ->
                                 context.startActivity(
-                                    VideoPlayerActivity.intent(context, song.uri, song.title),
+                                    VideoPlayerActivity.intent(context, videoUrl, audioUrl, title),
                                 )
                             }
-                        },
+                        }
+                    } else {
+                        null
+                    },
                     errorText = if (errorRes == 0) null else stringResource(errorRes),
                     playerProvider = { container.playerConnection.player },
                 )
