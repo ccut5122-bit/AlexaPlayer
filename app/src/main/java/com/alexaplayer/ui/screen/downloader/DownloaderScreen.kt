@@ -138,7 +138,7 @@ fun DownloaderScreen(
                     )
                 }
                 items(state.downloads, key = { it.token }) { download ->
-                    DownloadRow(item = download)
+                    DownloadRow(download = download)
                 }
             }
 
