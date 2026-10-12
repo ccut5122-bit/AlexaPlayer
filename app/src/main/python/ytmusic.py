@@ -71,6 +71,11 @@ _CLIENTS = ["android", "ios", "web", "android_vr", "tv", "mweb", "web_music"]
 _RESOLVE_CACHE = {}
 _RESOLVE_TTL = 900  # 15 minutes
 
+# Autocomplete answers for typed prefixes barely change, so keep them around briefly to make
+# backspacing and re-typing instant instead of another round trip.
+_SUGGEST_CACHE = {}
+_SUGGEST_TTL = 600  # 10 minutes
+
 
 def _cap_format(height):
     """The most specific height-capped muxed format selector for the given resolution.
@@ -185,11 +190,19 @@ def suggest(query, limit=10):
         return out
 
     def job():
+        import urllib.parse
+        import urllib.request
+
         q = str(query or "").strip()
         if not q:
             return {"suggestions": []}
-        import urllib.parse
-        import urllib.request
+
+        # Every prefix the user types is requested as they type, so a tiny TTL cache turns
+        # backspacing and repeated prefixes into an instant response.
+        key = "%s\n%s" % (q.lower(), int(limit))
+        hit = _SUGGEST_CACHE.get(key)
+        if hit and (time.time() - hit[0]) < _SUGGEST_TTL:
+            return {"suggestions": hit[1]}
 
         quoted = urllib.parse.quote(q)
         for client in ("youtube", "youtube-reduced", "firefox"):
@@ -199,10 +212,12 @@ def suggest(query, limit=10):
             )
             try:
                 req = urllib.request.Request(url, headers={"User-Agent": SEARCH_UA})
-                with urllib.request.urlopen(req, timeout=6) as resp:
+                with urllib.request.urlopen(req, timeout=4) as resp:
                     out = parse(resp.read().decode("utf-8", "replace"))
                 if out:
-                    return {"suggestions": [str(x) for x in out][: int(limit)]}
+                    items = [str(x) for x in out][: int(limit)]
+                    _SUGGEST_CACHE[key] = (time.time(), items)
+                    return {"suggestions": items}
             except Exception:  # noqa: BLE001 - try the next client
                 continue
         return {"suggestions": []}

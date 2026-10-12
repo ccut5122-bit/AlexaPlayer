@@ -75,6 +75,9 @@ class YoutubeViewModel(
     private var suggestJob: Job? = null
     private var homeLoaded = false
 
+    /** Prefix -> suggestions, so retyping/backspacing never waits on the network again. */
+    private val suggestCache = LinkedHashMap<String, List<String>>()
+
     init {
         loadHome()
     }
@@ -131,11 +134,22 @@ class YoutubeViewModel(
             _uiState.value = _uiState.value.copy(suggestions = emptyList())
             return
         }
+        // A prefix we have already fetched shows instantly; otherwise debounce a request.
+        suggestCache[trimmed]?.let { cached ->
+            _uiState.value = _uiState.value.copy(suggestions = cached)
+            return
+        }
         suggestJob = viewModelScope.launch {
             delay(SUGGEST_DEBOUNCE_MS)
             val items = runCatching { bridge.suggest(trimmed) }.getOrDefault(emptyList())
+            if (items.isNotEmpty()) {
+                suggestCache[trimmed] = items
+                if (suggestCache.size > SUGGEST_CACHE_MAX) {
+                    suggestCache.remove(suggestCache.keys.first())
+                }
+            }
             // Drop a stale response if the user kept typing.
-            if (_uiState.value.query == value) {
+            if (_uiState.value.query.trim() == trimmed) {
                 _uiState.value = _uiState.value.copy(suggestions = items)
             }
         }
@@ -372,7 +386,8 @@ class YoutubeViewModel(
 
     companion object {
         private const val AUTOPLAY_MAX = 25
-        private const val SUGGEST_DEBOUNCE_MS = 250L
+        private const val SUGGEST_DEBOUNCE_MS = 100L
+        private const val SUGGEST_CACHE_MAX = 64
 
         fun factory(container: AppContainer): ViewModelProvider.Factory = viewModelFactory {
             initializer {
