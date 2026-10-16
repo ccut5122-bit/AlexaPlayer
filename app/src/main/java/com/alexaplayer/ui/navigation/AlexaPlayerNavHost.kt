@@ -188,16 +188,24 @@ fun AlexaPlayerNavHost(container: AppContainer, modifier: Modifier = Modifier) {
             }
 
             composable(Routes.DOWNLOADER) {
+                val context = LocalContext.current
                 val vm: DownloaderViewModel = viewModel(factory = DownloaderViewModel.factory(container))
                 val state by vm.uiState.collectAsStateWithLifecycle()
                 DownloaderScreen(
                     state = state,
                     contentPadding = padding,
-                    onYoutubeUrlChange = vm::onYoutubeUrlChange,
-                    onInstagramUrlChange = vm::onInstagramUrlChange,
+                    onLinkChange = vm::onLinkChange,
+                    onFetch = vm::fetch,
                     onQuality = vm::setQuality,
-                    onDownloadYoutube = vm::downloadYoutube,
-                    onDownloadInstagram = vm::downloadInstagram,
+                    onPlay = {
+                        vm.play { videoUrl, audioUrl, title ->
+                            context.startActivity(
+                                VideoPlayerActivity.intent(context, videoUrl, audioUrl, title),
+                            )
+                        }
+                    },
+                    onDownloadVideo = { vm.download("video") },
+                    onDownloadAudio = { vm.download("audio") },
                 )
             }
 

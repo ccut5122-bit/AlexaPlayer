@@ -5,17 +5,17 @@ navigate Chaquopy's dynamic object graph. Failures are returned as ``{"error": "
 instead of raising, because an exception crossing the bridge loses the useful part of
 yt-dlp's message.
 
-Two traffic strategies are used:
+Traffic strategies:
   * Search always uses one stable desktop User-Agent - the search page parses embedded
     player config that rejects rotated/odd UAs, which is how "no results" usually creeps in.
-  * Format resolution rotates a random device identity per call so the server sees
-    different clients, and falls back through more permissive format strings, because a
-    single client sometimes reports "Requested format is not available".
+  * Stream/download extraction never forces a YouTube ``player_client`` up front: the
+    default set yt-dlp tunes for this JS-less environment is tried first, then a ladder of
+    explicit clients. Forcing a client that now needs a PO Token is what causes the classic
+    "Requested format is not available" (or a silent no-playback) on newer yt-dlp builds.
 """
 
 import json
 import os
-import random
 import time
 
 # Search keeps one well-known desktop Chrome UA. Rotating it makes YouTube's search page
@@ -24,25 +24,6 @@ SEARCH_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/122.0.0.0 Safari/537.36"
 )
-
-# Client identities rotate per request for format resolution/downloads.
-_DEVICES = [
-    {
-        "client": "android",
-        "ua": "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
-    },
-    {
-        "client": "ios",
-        "ua": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) "
-        "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
-    },
-    {
-        "client": "web",
-        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    },
-]
 
 # Downloaded bytes are reported through a dict instead of yt-dlp's stdout so a second
 # Kotlin thread can poll a single number instead of scraping logcat.
@@ -61,10 +42,24 @@ _OPTS = {
     "format": "bestaudio/best",
 }
 
-# YouTube blocks some clients for some videos ("Requested format is not available" is the
-# usual symptom). Trying the whole ladder underneath keeps playback alive in practice.
-# mp4-capable clients first, because Android's decoder is happiest with them.
-_CLIENTS = ["android", "ios", "web", "android_vr", "tv", "mweb", "web_music"]
+# Player clients are only pinned as a *fallback*. The default set yt-dlp picks for the
+# running environment (JS-less here, so it leans on Android/iOS clients that do not need a
+# PO Token) is always tried first - forcing a client that now requires a PO Token, or one
+# that yt-dlp has since removed, is exactly what turns "Every song fails" into "Requested
+# format is not available". These names are validated by yt-dlp itself, so an unknown one
+# merely wastes a single attempt instead of breaking the loop.
+_CLIENTS = [
+    "default",
+    "tv",
+    "android_vr",
+    "ios",
+    "ios_downgraded",
+    "mweb",
+    "tv_simply",
+    "web_safari",
+    "android",
+    "web",
+]
 
 # Stream URLs stay valid for a while; cache them so replaying a song is instant instead
 # of another slow round trip to the extractor.
@@ -87,13 +82,24 @@ def _cap_format(height):
 
 
 def _device_opts(base_format=None):
-    """Options with a randomly picked device UA; used for streams, not search."""
-    device = random.choice(_DEVICES)
+    """Options shared by stream + download extraction.
+
+    No User-Agent is forced here: yt-dlp picks the right UA per player client, and the
+    extractor returns the exact ``http_headers`` it signed the URL with, which the player
+    replays verbatim. Forcing our own UA is what makes the CDN answer the later media
+    request with 403."""
     opts = dict(_OPTS)
     if base_format:
         opts["format"] = base_format
-    opts["http_headers"] = {"User-Agent": device["ua"]}
     return opts
+
+
+def _apply_client(opts, client):
+    """Clone [opts] configured to extract with a single YouTube player client."""
+    attempt = dict(opts)
+    if client and client != "default":
+        attempt["extractor_args"] = {"youtube": {"player_client": [client]}}
+    return attempt
 
 
 def _run(func):
@@ -101,6 +107,63 @@ def _run(func):
         return json.dumps(func())
     except Exception as exc:  # noqa: BLE001 - bridge wants the message, not a traceback
         return json.dumps({"error": str(exc) or type(exc).__name__})
+
+
+def _pick_audio(info):
+    """Best playable (url, headers) from an extracted info dict. Prefers the requested
+    format that actually carries audio; falls back to the single muxed file."""
+    formats = info.get("requested_formats") or []
+    pick = next((f for f in formats if f.get("acodec") not in (None, "none")), None)
+    if pick is None:
+        pick = info
+    url = pick.get("url") or info.get("url")
+    if not url:
+        return None, {}
+    headers = pick.get("http_headers") or info.get("http_headers") or {}
+    return url, headers
+
+
+def _pick_streams(info):
+    """Split an extraction into (video, audio) format dicts. For a site that muxes audio
+    and video into one file, only [video] is returned and [audio] is None."""
+    formats = info.get("requested_formats") or []
+    video = next((f for f in formats if f.get("vcodec") not in (None, "none")), None)
+    audio = next((f for f in formats if f.get("acodec") not in (None, "none")), None)
+    if video is None and audio is None and info.get("url"):
+        return info, None
+    return video, audio
+
+
+def _dash_payload(info):
+    """Shape an extraction into the video_url/video_headers[/audio_url] payload Media3
+    merges on the fly. Falls back to a single (possibly muxed) file when a site has no
+    separate audio track, which is the norm for Instagram."""
+    if info is None:
+        return {}
+    video, audio = _pick_streams(info)
+    if video is not None and audio is not None:
+        return {
+            "video_url": video.get("url"),
+            "video_headers": {str(k): str(v) for k, v in (video.get("http_headers") or {}).items()},
+            "audio_url": audio.get("url"),
+            "audio_headers": {str(k): str(v) for k, v in (audio.get("http_headers") or {}).items()},
+            "id": info.get("id"),
+            "title": info.get("title") or "",
+            "channel": info.get("channel") or info.get("uploader") or "",
+            "duration": info.get("duration"),
+            "thumbnail": info.get("thumbnail") or "",
+        }
+    # One single file (or only one of the two). Play it as-is.
+    url, headers = _pick_audio(info)
+    if not url:
+        return {}
+    return {
+        "video_url": url,
+        "video_headers": {str(k): str(v) for k, v in (headers or {}).items()},
+        "title": info.get("title") or "",
+        "thumbnail": info.get("thumbnail") or "",
+        "merged": False,
+    }
 
 
 def search(query, limit=25):
@@ -242,37 +305,26 @@ def _stream(target, base_format):
             target_url = "https://www.youtube.com/watch?v=%s" % target_url
 
         info = None
+        url = None
+        headers = {}
         last_error = None
         for fmt in (base_format, "best", "18"):
             for client in _CLIENTS:
                 opts = dict(_device_opts(fmt), extract_flat=False)
-                opts["extractor_args"] = {"youtube": {"player_client": [client]}}
                 try:
-                    info = attempt(opts, target_url)
+                    candidate = attempt(_apply_client(opts, client), target_url)
                 except Exception as exc:  # noqa: BLE001 - try the next client/format
                     last_error = exc
                     continue
+                found_url, found_headers = _pick_audio(candidate)
+                if found_url:
+                    info, url, headers = candidate, found_url, found_headers
+                    break
+            if url:
                 break
-            if info is not None:
-                break
-
-        if info is None:
-            raise RuntimeError("No playable stream (%s)" % (last_error or "unknown"))
-
-        fmt = info.get("requested_formats") or []
-        pick = next(
-            (f for f in fmt if f.get("acodec") not in (None, "none")),
-            None,
-        )
-        if pick is None:
-            url = info.get("url")
-            headers = info.get("http_headers") or {}
-        else:
-            url = pick.get("url")
-            headers = pick.get("http_headers") or info.get("http_headers") or {}
 
         if not url:
-            raise RuntimeError("No playable stream")
+            raise RuntimeError("No playable stream (%s)" % (last_error or "unknown"))
 
         return {
             "url": url,
@@ -322,61 +374,105 @@ def resolve_video_dash(video_id, max_height=2160):
     Falls back to a plain muxed stream when a separate pair is unavailable."""
 
     def job():
-        import yt_dlp
-
         target = "https://www.youtube.com/watch?v=%s" % video_id
         h = max(240, int(max_height))
         vfmt = "bestvideo[height<=%d][ext=mp4]/bestvideo[height<=%d]/best[height<=%d]" % (h, h, h)
         afmt = "bestaudio[ext=m4a]/bestaudio/best"
-        opts = dict(_device_opts("%s+%s" % (vfmt, afmt)), extract_flat=False)
 
-        info = None
-        last_error = None
-        for client in _CLIENTS:
-            attempt = dict(opts)
-            attempt["extractor_args"] = {"youtube": {"player_client": [client]}}
+        try:
+            info = _extract_streams(target, "%s+%s" % (vfmt, afmt))
+        except Exception:  # noqa: BLE001 - fall back to a single file below
+            info = None
+        payload = _dash_payload(info) if info is not None else {}
+        if payload.get("video_url"):
+            return payload
+        # Last resort: whatever single file we can get.
+        return json.loads(_stream(target, _cap_format(h)))
+
+    return _run(job)
+
+
+def resolve_url(url, max_height=1080):
+    """Playable stream(s) for any pasted link (YouTube, Instagram, ...). Returns a
+    video-only + audio-only pair when the site separates them, otherwise a single muxed
+    URL. Used by the Downloader tab's play button."""
+
+    def job():
+        link = str(url or "").strip()
+        h = max(240, int(max_height))
+        vfmt = "bestvideo[height<=%d][ext=mp4]/bestvideo[height<=%d]/best[height<=%d]" % (h, h, h)
+        afmt = "bestaudio[ext=m4a]/bestaudio/best"
+        for fmt in ("%s+%s" % (vfmt, afmt), _cap_format(h), "best", "18"):
             try:
-                with yt_dlp.YoutubeDL(attempt) as ydl:
-                    info = ydl.extract_info(target, download=False)
-                break
-            except Exception as exc:  # noqa: BLE001 - try the next client
+                info = _extract_streams(link, fmt)
+            except Exception:  # noqa: BLE001 - try the next format
                 info = None
-                last_error = exc
+            if info is None:
                 continue
+            payload = _dash_payload(info)
+            if payload.get("video_url"):
+                return payload
+        return json.loads(_stream(link, _cap_format(h)))
 
-        if info is None:
-            # Last resort: whatever single file we can get.
-            return json.loads(_stream(target, _cap_format(h)))
+    return _run(job)
 
-        formats = info.get("requested_formats") or []
-        video = next((f for f in formats if f.get("vcodec") not in (None, "none")), None)
-        audio = next((f for f in formats if f.get("acodec") not in (None, "none")), None)
 
-        if video is None or audio is None:
-            # yt-dlp picked a single muxed file; use it as-is.
-            url = (video or audio or info).get("url") or info.get("url")
-            headers = (video or info).get("http_headers") or info.get("http_headers") or {}
-            return {
-                "video_url": url,
-                "video_headers": {str(k): str(v) for k, v in (headers or {}).items()},
-                "title": info.get("title") or "",
-                "thumbnail": info.get("thumbnail") or "",
-                "merged": False,
-            }
+def fetch(url, max_height=1080):
+    """Metadata for a pasted link so the Downloader can show a preview and play button
+    without downloading anything: title, thumbnail, duration, uploader, whether it has a
+    video track, and the distinct video heights on offer."""
+
+    def job():
+        try:
+            info = _extract_streams(str(url), "best")
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(str(exc) or "Could not read that link")
+
+        heights = set()
+        for f in info.get("formats") or []:
+            height = f.get("height")
+            if height and f.get("vcodec") not in (None, "none"):
+                heights.add(int(height))
 
         return {
-            "video_url": video.get("url"),
-            "video_headers": {str(k): str(v) for k, v in (video.get("http_headers") or {}).items()},
-            "audio_url": audio.get("url"),
-            "audio_headers": {str(k): str(v) for k, v in (audio.get("http_headers") or {}).items()},
-            "id": info.get("id"),
+            "url": info.get("webpage_url") or str(url),
             "title": info.get("title") or "",
-            "channel": info.get("channel") or info.get("uploader") or "",
-            "duration": info.get("duration"),
+            "uploader": info.get("uploader") or info.get("channel") or "",
             "thumbnail": info.get("thumbnail") or "",
+            "duration": info.get("duration") or 0,
+            "is_video": any(
+                f.get("vcodec") not in (None, "none") for f in (info.get("formats") or [])
+            ) or info.get("vcodec") not in (None, "none"),
+            "heights": sorted(heights),
         }
 
     return _run(job)
+
+
+def _extract_streams(url, base_format):
+    """Extract and split video/audio for any URL using the default client first."""
+    import yt_dlp
+
+    info = None
+    last_error = None
+    opts = dict(_device_opts(base_format), extract_flat=False)
+    for client in _CLIENTS:
+        try:
+            with yt_dlp.YoutubeDL(_apply_client(opts, client)) as ydl:
+                info = ydl.extract_info(str(url), download=False)
+            break
+        except Exception as exc:  # noqa: BLE001 - try the next client
+            info = None
+            last_error = exc
+            continue
+    if info is None:
+        raise RuntimeError(str(last_error) or "Extraction failed")
+
+    entries = [e for e in (info.get("entries") or []) if e]
+    if entries:
+        info = entries[0]
+    return info
+
 
 
 def _is_instagram(url):
@@ -411,21 +507,28 @@ def download_url(url, kind, token, outdir, max_height=1080):
         info = None
         last_error = None
         for fmt in formats:
-            opts = dict(
-                _device_opts(fmt),
-                skip_download=False,
-                noplaylist=True,
-                outtmpl=os.path.join(str(outdir), "%(title).120s-%(id)s.%(ext)s"),
-                progress_hooks=[_progress_hook(str(token))],
-            )
-            try:
-                with yt_dlp.YoutubeDL(opts) as ydl:
-                    info = ydl.extract_info(link, download=True)
+            for client in _CLIENTS:
+                opts = _apply_client(
+                    dict(
+                        _device_opts(fmt),
+                        skip_download=False,
+                        noplaylist=True,
+                        outtmpl=os.path.join(str(outdir), "%(title).120s-%(id)s.%(ext)s"),
+                        progress_hooks=[_progress_hook(str(token))],
+                    ),
+                    client,
+                )
+                try:
+                    with yt_dlp.YoutubeDL(opts) as ydl:
+                        info = ydl.extract_info(link, download=True)
+                except Exception as exc:  # noqa: BLE001 - try the next client/format
+                    _PROGRESS[str(token)] = {"status": "error", "error": str(exc)}
+                    last_error = exc
+                    info = None
+                    continue
                 break
-            except Exception as exc:  # noqa: BLE001 - try the next format
-                last_error = exc
-                info = None
-                continue
+            if info is not None:
+                break
 
         if info is None:
             if _is_instagram(link):
@@ -506,19 +609,22 @@ def download(video_id, kind, token, outdir, max_height=720):
         last_error = None
         for fmt in formats:
             for client in _CLIENTS:
-                opts = dict(
-                    _device_opts(fmt),
-                    skip_download=False,
-                    outtmpl=os.path.join(str(outdir), "%(title).120s-%(id)s.%(ext)s"),
-                    progress_hooks=[_progress_hook(str(token))],
+                opts = _apply_client(
+                    dict(
+                        _device_opts(fmt),
+                        skip_download=False,
+                        outtmpl=os.path.join(str(outdir), "%(title).120s-%(id)s.%(ext)s"),
+                        progress_hooks=[_progress_hook(str(token))],
+                    ),
+                    client,
                 )
-                opts["extractor_args"] = {"youtube": {"player_client": [client]}}
                 try:
                     with yt_dlp.YoutubeDL(opts) as ydl:
                         info = ydl.extract_info(url, download=True)
                 except Exception as exc:  # noqa: BLE001 - try the next client/format
                     _PROGRESS[str(token)] = {"status": "error", "error": str(exc)}
                     last_error = exc
+                    info = None
                     continue
                 break
             if info is not None:

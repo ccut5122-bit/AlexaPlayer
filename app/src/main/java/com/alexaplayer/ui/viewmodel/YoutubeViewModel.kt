@@ -257,26 +257,33 @@ class YoutubeViewModel(
         autoplayJob = viewModelScope.launch {
             try {
                 val height = videoHeight()
-                val seen = mutableSetOf(seed.videoId)
-                var currentSeed = seed
+                val queries = autoplayQueries(seed).ifEmpty { listOf(seed.title, seed.channel) }
+                val seenIds = mutableSetOf(seed.videoId)
+                val seenTitles = mutableSetOf(normalizeTitle(seed.title))
                 var queued = 0
+                var index = 0
+                // Rotate through several related queries instead of leaning on one: a single
+                // "<title> <channel>" search mostly returns the very song that is playing,
+                // whereas genre/artist mix queries surface genuinely new tracks.
                 while (isActive && queued < AUTOPLAY_MAX) {
-                    val related = runCatching {
-                        bridge.search("${currentSeed.title} ${currentSeed.channel}".trim(), limit = 12)
-                    }.getOrNull() ?: break
-
+                    val query = queries[index % queries.size]
+                    index++
+                    val related = runCatching { bridge.search(query, limit = 20) }.getOrNull()
                     var added = 0
-                    for (item in related.results) {
+                    for (item in related?.results.orEmpty()) {
                         if (queued >= AUTOPLAY_MAX) break
-                        if (!seen.add(item.videoId)) continue
-                        val song = runCatching { bridge.toSong(bridge.resolve(item.videoId, height)) }
-                            .getOrNull() ?: continue
+                        if (!seenIds.add(item.videoId)) continue
+                        val title = normalizeTitle(item.title)
+                        if (title.isNotBlank() && !seenTitles.add(title)) continue
+                        val song = runCatching {
+                            bridge.toSong(bridge.resolve(item.videoId, height))
+                        }.getOrNull() ?: continue
                         playerConnection.addToQueue(listOf(song))
-                        currentSeed = item
                         queued++
                         added++
                     }
-                    if (added == 0) break
+                    // Every template already returned only things we have; stop.
+                    if (added == 0 && index >= queries.size) break
                 }
             } catch (cancellation: CancellationException) {
                 throw cancellation
@@ -285,6 +292,34 @@ class YoutubeViewModel(
             }
         }
     }
+
+    /**
+     * Related-search templates for endless autoplay. Genre words in the seed title expand
+     * first (a phonk track asks for "phonk mix"), then the artist and title, so the queue
+     * stays on-genre and still stays varied.
+     */
+    private fun autoplayQueries(seed: YoutubeTrack): List<String> {
+        val title = seed.title.trim()
+        val lower = title.lowercase()
+        val queries = mutableListOf<String>()
+        for (genre in GENRE_KEYWORDS) {
+            if (lower.contains(genre)) {
+                queries += "$genre mix"
+                queries += "$genre songs"
+            }
+        }
+        if (seed.channel.isNotBlank()) {
+            queries += "${seed.channel} songs"
+            queries += "${seed.channel} mix"
+        }
+        queries += "$title mix"
+        if (title.isNotBlank()) queries += "$title similar songs"
+        queries += title
+        return queries.map { it.trim() }.filter { it.isNotBlank() }.distinct()
+    }
+
+    private fun normalizeTitle(text: String): String =
+        text.lowercase().replace(Regex("[^a-z0-9]+"), " ").trim()
 
     /** Same flow but for the muxed video stream, funnelled into the full-screen player. */
     fun playVideo(track: YoutubeTrack, onReady: (videoUrl: String, audioUrl: String?, title: String) -> Unit) {
@@ -386,9 +421,18 @@ class YoutubeViewModel(
     }
 
     companion object {
-        private const val AUTOPLAY_MAX = 25
+        private const val AUTOPLAY_MAX = 30
         private const val SUGGEST_DEBOUNCE_MS = 100L
         private const val SUGGEST_CACHE_MAX = 64
+
+        /** Genres/themes whose mere presence in a title seeds on-genre recommendations. */
+        private val GENRE_KEYWORDS = listOf(
+            "phonk", "lofi", "lo-fi", "hip hop", "hip-hop", "rap", "trap", "drill",
+            "edm", "house", "techno", "trance", "dubstep", "dnb", "drum and bass",
+            "rock", "metal", "punk", "pop", "rnb", "r&b", "jazz", "blues", "classical",
+            "remix", "instrumental", "slowed", "reverb", "bollywood", "hindi", "punjabi",
+            "tamil", "telugu", "k-pop", "anime", "gaming",
+        )
 
         fun factory(container: AppContainer): ViewModelProvider.Factory = viewModelFactory {
             initializer {

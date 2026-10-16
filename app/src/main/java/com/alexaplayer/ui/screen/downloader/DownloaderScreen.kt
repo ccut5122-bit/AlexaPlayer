@@ -9,8 +9,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.LinearProgressIndicator
@@ -23,10 +25,14 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.alexaplayer.R
+import com.alexaplayer.core.designsystem.component.Artwork
 import com.alexaplayer.core.designsystem.component.PrimaryButton
 import com.alexaplayer.core.designsystem.component.SecondaryButton
+import com.alexaplayer.core.designsystem.theme.AlexaRadius
 import com.alexaplayer.core.designsystem.theme.AlexaSpacing
+import com.alexaplayer.core.util.DurationFormatter
 import com.alexaplayer.data.youtube.ActiveDownload
+import com.alexaplayer.data.youtube.FetchedMedia
 import com.alexaplayer.ui.component.AlexaTopBar
 import com.alexaplayer.ui.component.SearchField
 import com.alexaplayer.ui.viewmodel.DownloaderViewModel.DownloaderUiState
@@ -34,19 +40,20 @@ import com.alexaplayer.ui.viewmodel.DownloaderViewModel.DownloaderUiState
 private val QUALITIES = listOf(720, 1080, 1440, 2160)
 
 /**
- * Offline grabber: a YouTube box (video or audio, with a resolution) and an Instagram box
- * (reel / video / photo). Both write into Download/AlexaPlayer through the same yt-dlp
- * bridge the YouTube tab uses.
+ * One link box for everything: paste a YouTube or Instagram URL, Fetch to preview it,
+ * then Play it full-screen or download the video/audio. The same resolution chips apply to
+ * both playback and downloads.
  */
 @Composable
 fun DownloaderScreen(
     state: DownloaderUiState,
     contentPadding: PaddingValues,
-    onYoutubeUrlChange: (String) -> Unit,
-    onInstagramUrlChange: (String) -> Unit,
+    onLinkChange: (String) -> Unit,
+    onFetch: () -> Unit,
     onQuality: (Int) -> Unit,
-    onDownloadYoutube: (String) -> Unit,
-    onDownloadInstagram: () -> Unit,
+    onPlay: () -> Unit,
+    onDownloadVideo: () -> Unit,
+    onDownloadAudio: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxSize()) {
@@ -59,41 +66,19 @@ fun DownloaderScreen(
                 bottom = contentPadding.calculateBottomPadding() + AlexaSpacing.xxl,
             ),
         ) {
-            item(key = "yt") {
-                SectionHeader(
-                    title = stringResource(R.string.downloader_youtube_section),
-                    subtitle = stringResource(R.string.downloader_subtitle),
-                )
-                SearchField(
-                    value = state.youtubeUrl,
-                    onValueChange = onYoutubeUrlChange,
-                    placeholder = stringResource(R.string.downloader_youtube_hint),
-                )
-                Spacer(Modifier.height(AlexaSpacing.xs))
+            item(key = "input") {
                 Text(
-                    text = stringResource(R.string.downloader_quality),
-                    style = MaterialTheme.typography.labelMedium,
+                    text = stringResource(R.string.downloader_subtitle),
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = AlexaSpacing.lg),
                 )
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(AlexaSpacing.sm),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = AlexaSpacing.lg, vertical = AlexaSpacing.sm),
-                ) {
-                    QUALITIES.forEach { q ->
-                        FilterChip(
-                            selected = state.quality == q,
-                            onClick = { onQuality(q) },
-                            label = { Text(qualityLabel(q)) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = MaterialTheme.colorScheme.primary,
-                                selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
-                            ),
-                        )
-                    }
-                }
+                SearchField(
+                    value = state.link,
+                    onValueChange = onLinkChange,
+                    placeholder = stringResource(R.string.downloader_link_hint),
+                    onSubmit = onFetch,
+                )
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(AlexaSpacing.md),
                     modifier = Modifier
@@ -101,40 +86,45 @@ fun DownloaderScreen(
                         .padding(horizontal = AlexaSpacing.lg),
                 ) {
                     PrimaryButton(
-                        text = stringResource(R.string.youtube_download_video),
-                        onClick = { onDownloadYoutube("video") },
+                        text = if (state.fetching) {
+                            stringResource(R.string.downloader_fetching)
+                        } else {
+                            stringResource(R.string.downloader_fetch)
+                        },
+                        onClick = onFetch,
+                        enabled = !state.fetching && state.link.isNotBlank(),
                         modifier = Modifier.weight(1f),
                     )
-                    SecondaryButton(
-                        text = stringResource(R.string.youtube_download_audio),
-                        onClick = { onDownloadYoutube("audio") },
-                        modifier = Modifier.weight(1f),
+                }
+                if (state.fetching) {
+                    LinearProgressIndicator(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = AlexaSpacing.lg, vertical = AlexaSpacing.md),
                     )
                 }
             }
 
-            item(key = "ig") {
-                SectionHeader(
-                    title = stringResource(R.string.downloader_instagram_section),
-                    subtitle = null,
-                )
-                SearchField(
-                    value = state.instagramUrl,
-                    onValueChange = onInstagramUrlChange,
-                    placeholder = stringResource(R.string.downloader_instagram_hint),
-                )
-                PrimaryButton(
-                    text = stringResource(R.string.downloader_get),
-                    onClick = onDownloadInstagram,
-                    modifier = Modifier.padding(horizontal = AlexaSpacing.lg),
-                )
+            state.media?.let { media ->
+                item(key = "media") {
+                    MediaCard(
+                        media = media,
+                        quality = state.quality,
+                        resolvingPlay = state.resolvingPlay,
+                        onQuality = onQuality,
+                        onPlay = onPlay,
+                        onDownloadVideo = onDownloadVideo,
+                        onDownloadAudio = onDownloadAudio,
+                    )
+                }
             }
 
             if (state.downloads.isNotEmpty()) {
-                item(key = "dl_header") {
-                    SectionHeader(
-                        title = stringResource(R.string.downloader_saved),
-                        subtitle = null,
+                item(key = "dl_title") {
+                    Text(
+                        text = stringResource(R.string.downloader_downloads_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(horizontal = AlexaSpacing.lg, vertical = AlexaSpacing.sm),
                     )
                 }
                 items(state.downloads, key = { it.token }) { download ->
@@ -157,14 +147,123 @@ fun DownloaderScreen(
 }
 
 @Composable
-private fun SectionHeader(title: String, subtitle: String?) {
-    Column(modifier = Modifier.padding(horizontal = AlexaSpacing.lg, vertical = AlexaSpacing.sm)) {
-        Text(text = title, style = MaterialTheme.typography.titleMedium)
-        if (!subtitle.isNullOrBlank()) {
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+private fun MediaCard(
+    media: FetchedMedia,
+    quality: Int,
+    resolvingPlay: Boolean,
+    onQuality: (Int) -> Unit,
+    onPlay: () -> Unit,
+    onDownloadVideo: () -> Unit,
+    onDownloadAudio: () -> Unit,
+) {
+    Column {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(AlexaSpacing.md),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = AlexaSpacing.lg, vertical = AlexaSpacing.sm),
+        ) {
+            Artwork(
+                artworkUri = media.thumbnailUrl.ifBlank { null },
+                seed = media.url.hashCode().toLong(),
+                contentDescription = media.title,
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(AlexaRadius.md),
+                modifier = Modifier.size(96.dp),
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = media.title.ifBlank { media.url },
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (media.uploader.isNotBlank()) {
+                    Text(
+                        text = media.uploader,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                if (media.durationMs > 0L) {
+                    Text(
+                        text = DurationFormatter.format(media.durationMs),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            if (resolvingPlay) {
+                CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+            }
+        }
+
+        Text(
+            text = stringResource(R.string.downloader_quality),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = AlexaSpacing.lg),
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(AlexaSpacing.sm),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = AlexaSpacing.lg, vertical = AlexaSpacing.sm),
+        ) {
+            QUALITIES.forEach { q ->
+                FilterChip(
+                    selected = quality == q,
+                    onClick = { onQuality(q) },
+                    label = { Text(qualityLabel(q)) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primary,
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+                    ),
+                )
+            }
+        }
+        Text(
+            text = stringResource(R.string.downloader_quality_hint),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = AlexaSpacing.lg),
+        )
+
+        Spacer(Modifier.height(AlexaSpacing.sm))
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(AlexaSpacing.sm),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = AlexaSpacing.lg),
+        ) {
+            if (media.isVideo) {
+                PrimaryButton(
+                    text = stringResource(R.string.downloader_play),
+                    onClick = onPlay,
+                    enabled = !resolvingPlay,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+        Spacer(Modifier.height(AlexaSpacing.sm))
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(AlexaSpacing.sm),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = AlexaSpacing.lg),
+        ) {
+            PrimaryButton(
+                text = stringResource(R.string.youtube_download_video),
+                onClick = onDownloadVideo,
+                enabled = media.isVideo,
+                modifier = Modifier.weight(1f),
+            )
+            SecondaryButton(
+                text = stringResource(R.string.youtube_download_audio),
+                onClick = onDownloadAudio,
+                modifier = Modifier.weight(1f),
             )
         }
     }
@@ -172,9 +271,10 @@ private fun SectionHeader(title: String, subtitle: String?) {
 
 @Composable
 private fun DownloadRow(download: ActiveDownload) {
-    Column(modifier = Modifier
-        .fillMaxWidth()
-        .padding(horizontal = AlexaSpacing.lg, vertical = AlexaSpacing.sm),
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = AlexaSpacing.lg, vertical = AlexaSpacing.sm),
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,

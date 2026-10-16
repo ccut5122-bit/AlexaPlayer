@@ -49,6 +49,17 @@ data class ResolvedDash(
     val thumbnailUrl: String,
 )
 
+/** Preview metadata for a link pasted into the Downloader, fetched without downloading. */
+data class FetchedMedia(
+    val url: String,
+    val title: String,
+    val uploader: String,
+    val thumbnailUrl: String,
+    val durationMs: Long,
+    val isVideo: Boolean,
+    val heights: List<Int>,
+)
+
 /** A finished download: absolute path on disk plus what kind of file it is. */
 data class DownloadResult(
     val path: String,
@@ -179,6 +190,53 @@ class YoutubeBridge(context: Context) {
                 audioUrl = audioUrl,
                 title = payload.optString("title"),
                 thumbnailUrl = payload.optString("thumbnail"),
+            )
+        }
+
+    /**
+     * A playable stream pair for any pasted link (YouTube, Instagram, ...). Video-only +
+     * audio-only when the site separates them, a single muxed URL otherwise.
+     */
+    suspend fun resolveUrl(url: String, maxHeight: Int): ResolvedDash =
+        withContext(Dispatchers.IO) {
+            val payload = JSONObject(call("resolve_url", url, maxHeight))
+            val error = payload.optString("error")
+            if (error.isNotEmpty()) throw YoutubeException(error)
+            val videoUrl = payload.optString("video_url")
+            if (videoUrl.isBlank()) throw YoutubeException("No playable stream")
+            val videoHeaders = payload.optJSONObject("video_headers")?.toStringMap() ?: emptyMap()
+            val audioUrl = payload.optString("audio_url").takeIf { it.isNotBlank() && it != videoUrl }
+            val audioHeaders = payload.optJSONObject("audio_headers")?.toStringMap() ?: emptyMap()
+            com.alexaplayer.playback.StreamHeaders.put(videoUrl, videoHeaders)
+            if (audioUrl != null) com.alexaplayer.playback.StreamHeaders.put(audioUrl, audioHeaders)
+            ResolvedDash(
+                videoUrl = videoUrl,
+                audioUrl = audioUrl,
+                title = payload.optString("title"),
+                thumbnailUrl = payload.optString("thumbnail"),
+            )
+        }
+
+    /** Metadata only (title, thumbnail, duration, available heights) for a pasted link. */
+    suspend fun fetch(url: String): FetchedMedia =
+        withContext(Dispatchers.IO) {
+            val payload = JSONObject(call("fetch", url))
+            val error = payload.optString("error")
+            if (error.isNotEmpty()) throw YoutubeException(error)
+            val heightsJson = payload.optJSONArray("heights")
+            val heights = buildList {
+                if (heightsJson != null) {
+                    for (i in 0 until heightsJson.length()) add(heightsJson.optInt(i))
+                }
+            }
+            FetchedMedia(
+                url = payload.optString("url"),
+                title = payload.optString("title"),
+                uploader = payload.optString("uploader"),
+                thumbnailUrl = payload.optString("thumbnail"),
+                durationMs = payload.optLong("duration").secondsToMillis(),
+                isVideo = payload.optBoolean("is_video"),
+                heights = heights,
             )
         }
 

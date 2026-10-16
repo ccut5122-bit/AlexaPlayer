@@ -321,4 +321,12 @@
     <string name="downloader_saved">Saved to Download/AlexaPlayer</string>
     <string name="downloader_in_progress">Downloading…</string>
     <string name="downloader_failed">Failed</string>
+    <string name="downloader_link_hint">Paste a YouTube or Instagram link</string>
+    <string name="downloader_link">Link</string>
+    <string name="downloader_fetch">Fetch</string>
+    <string name="downloader_fetching">Fetching…</string>
+    <string name="downloader_play">Play</string>
+    <string name="downloader_downloads_title">Downloads</string>
+    <string name="downloader_read_failed">Could not read that link</string>
+    <string name="downloader_quality_hint">Higher quality applies to playback and downloads</string>
 </resources>
