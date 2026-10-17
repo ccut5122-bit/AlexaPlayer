@@ -65,8 +65,6 @@ fun DownloaderScreen(
     contentPadding: PaddingValues,
     onLinkChange: (String) -> Unit,
     onFetch: () -> Unit,
-    onLinkChange: (String) -> Unit,
-    onFetch: () -> Unit,
     onQuality: (Int) -> Unit,
     onPlay: ((videoUrl: String, audioUrl: String?, title: String) -> Unit) -> Unit,
     onFullscreen: (videoUrl: String, audioUrl: String?, title: String) -> Unit,
