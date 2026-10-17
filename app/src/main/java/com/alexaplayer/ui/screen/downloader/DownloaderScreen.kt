@@ -20,6 +20,11 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
@@ -37,9 +42,17 @@ import com.alexaplayer.data.youtube.ActiveDownload
 import com.alexaplayer.data.youtube.FetchedMedia
 import com.alexaplayer.ui.component.AlexaTopBar
 import com.alexaplayer.ui.component.SearchField
+import com.alexaplayer.ui.video.InlineVideoPlayer
 import com.alexaplayer.ui.viewmodel.DownloaderViewModel.DownloaderUiState
 
 private val QUALITIES = listOf(720, 1080, 1440, 2160)
+
+/** The link the user asked to play, already resolved into streamable URLs. */
+private data class PlaybackSelection(
+    val videoUrl: String,
+    val audioUrl: String?,
+    val title: String,
+)
 
 /**
  * One link box for everything: paste a YouTube or Instagram URL, Fetch to preview it,
@@ -52,12 +65,18 @@ fun DownloaderScreen(
     contentPadding: PaddingValues,
     onLinkChange: (String) -> Unit,
     onFetch: () -> Unit,
+    onLinkChange: (String) -> Unit,
+    onFetch: () -> Unit,
     onQuality: (Int) -> Unit,
-    onPlay: () -> Unit,
+    onPlay: ((videoUrl: String, audioUrl: String?, title: String) -> Unit) -> Unit,
+    onFullscreen: (videoUrl: String, audioUrl: String?, title: String) -> Unit,
     onDownloadVideo: () -> Unit,
     onDownloadAudio: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var playing by remember { mutableStateOf<PlaybackSelection?>(null) }
+    LaunchedEffect(state.media?.url) { playing = null }
+
     Column(modifier = modifier.fillMaxSize()) {
         AlexaTopBar(title = stringResource(R.string.downloader_title))
 
@@ -119,8 +138,10 @@ fun DownloaderScreen(
                         media = media,
                         quality = state.quality,
                         resolvingPlay = state.resolvingPlay,
+                        playing = playing,
                         onQuality = onQuality,
-                        onPlay = onPlay,
+                        onPlay = { onPlay { v, a, t -> playing = PlaybackSelection(v, a, t) } },
+                        onFullscreen = onFullscreen,
                         onDownloadVideo = onDownloadVideo,
                         onDownloadAudio = onDownloadAudio,
                     )
@@ -159,8 +180,10 @@ private fun MediaCard(
     media: FetchedMedia,
     quality: Int,
     resolvingPlay: Boolean,
+    playing: PlaybackSelection?,
     onQuality: (Int) -> Unit,
     onPlay: () -> Unit,
+    onFullscreen: (videoUrl: String, audioUrl: String?, title: String) -> Unit,
     onDownloadVideo: () -> Unit,
     onDownloadAudio: () -> Unit,
 ) {
@@ -255,6 +278,14 @@ private fun MediaCard(
                 )
             }
         }
+        playing?.let { selection ->
+            InlineVideoPlayer(
+                videoUrl = selection.videoUrl,
+                audioUrl = selection.audioUrl,
+                onFullscreen = { onFullscreen(selection.videoUrl, selection.audioUrl, selection.title) },
+                modifier = Modifier.padding(horizontal = AlexaSpacing.lg, vertical = AlexaSpacing.sm),
+            )
+        }
         Spacer(Modifier.height(AlexaSpacing.sm))
         Row(
             horizontalArrangement = Arrangement.spacedBy(AlexaSpacing.sm),
@@ -263,13 +294,16 @@ private fun MediaCard(
                 .padding(horizontal = AlexaSpacing.lg),
         ) {
             PrimaryButton(
-                text = stringResource(R.string.youtube_download_video),
+                text = stringResource(R.string.downloader_dl_video),
                 onClick = onDownloadVideo,
                 enabled = media.isVideo,
+                leadingIcon = {
+                    Icon(painter = painterResource(R.drawable.ic_download), contentDescription = null)
+                },
                 modifier = Modifier.weight(1f),
             )
             SecondaryButton(
-                text = stringResource(R.string.youtube_download_audio),
+                text = stringResource(R.string.downloader_dl_audio),
                 onClick = onDownloadAudio,
                 modifier = Modifier.weight(1f),
             )

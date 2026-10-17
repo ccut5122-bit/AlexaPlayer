@@ -329,4 +329,7 @@
     <string name="downloader_downloads_title">Downloads</string>
     <string name="downloader_read_failed">Could not read that link</string>
     <string name="downloader_quality_hint">Higher quality applies to playback and downloads</string>
+    <string name="downloader_fullscreen">Full screen</string>
+    <string name="downloader_dl_video">Video</string>
+    <string name="downloader_dl_audio">Audio</string>
 </resources>

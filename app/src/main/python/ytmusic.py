@@ -71,6 +71,10 @@ _RESOLVE_TTL = 900  # 15 minutes
 _SUGGEST_CACHE = {}
 _SUGGEST_TTL = 600  # 10 minutes
 
+# Fetching the same pasted link twice should feel instant, so keep preview metadata briefly.
+_FETCH_CACHE = {}
+_FETCH_TTL = 600  # 10 minutes
+
 
 def _cap_format(height):
     """The most specific height-capped muxed format selector for the given resolution.
@@ -163,6 +167,117 @@ def _dash_payload(info):
         "title": info.get("title") or "",
         "thumbnail": info.get("thumbnail") or "",
         "merged": False,
+    }
+
+
+def _has_video(fmt):
+    return fmt.get("vcodec") not in (None, "none")
+
+
+def _has_audio(fmt):
+    return fmt.get("acodec") not in (None, "none")
+
+
+def _headers(fmt):
+    return {str(k): str(v) for k, v in (fmt.get("http_headers") or {}).items()}
+
+
+def _best_by_height(items):
+    if not items:
+        return None
+    return max(
+        items,
+        key=lambda f: (
+            f.get("height") or 0,
+            f.get("tbr") or f.get("vbr") or 0,
+            1 if f.get("ext") == "mp4" else 0,
+        ),
+    )
+
+
+def _best_audio(items):
+    if not items:
+        return None
+    return max(
+        items,
+        key=lambda f: (1 if f.get("ext") == "m4a" else 0, f.get("abr") or f.get("tbr") or 0),
+    )
+
+
+def _headers_of(fmt):
+    return {str(k): str(v) for k, v in (fmt.get("http_headers") or {}).items()}
+
+
+def _single_payload(fmt, info):
+    if not fmt or not fmt.get("url"):
+        return {}
+    return {
+        "video_url": fmt.get("url"),
+        "video_headers": _headers_of(fmt),
+        "id": info.get("id"),
+        "title": info.get("title") or "",
+        "channel": info.get("channel") or info.get("uploader") or "",
+        "duration": info.get("duration"),
+        "thumbnail": info.get("thumbnail") or "",
+        "merged": fmt.get("acodec") not in (None, "none"),
+    }
+
+
+def _playback_payload(info, max_height=1080):
+    """A playable payload built from the raw format list, not yt-dlp's pick.
+
+    YouTube serves 1080p and above only as a video-only track, so the best video track is
+    paired with the best audio track for Media3 to merge (MergingMediaSource). Instagram
+    serves one progressive file with both tracks, returned as a single source. Choosing
+    from the format list ourselves keeps video and audio from ever getting separated."""
+    if not info:
+        return {}
+    formats = [f for f in (info.get("formats") or []) if f.get("url")]
+    if not formats and info.get("url"):
+        formats = [info]
+    if not formats:
+        return {}
+
+    cap = int(max_height) if max_height else 0
+    video_only = [f for f in formats if f.get("vcodec") not in (None, "none") and f.get("acodec") in (None, "none")]
+    progressive = [f for f in formats if f.get("vcodec") not in (None, "none") and f.get("acodec") not in (None, "none")]
+    audio_only = [f for f in formats if f.get("acodec") not in (None, "none") and f.get("vcodec") in (None, "none")]
+
+    def within(items):
+        if max_height is None or int(max_height) <= 0:
+            return items
+        capped = [f for f in items if (f.get("height") or 0) <= int(max_height)]
+        return capped or items
+
+    best_video_only = _best_by_height(within(video_only))
+    best_progressive = _best_by_height(within(progressive))
+
+    best = best_video_only
+    if best_progressive is not None and (
+        best is None or (best_progressive.get("height") or 0) >= (best.get("height") or 0)
+    ):
+        best = best_progressive
+
+    if best is None:
+        best_audio = _best_audio(within(audio_only))
+        return _single_payload(best_audio, info) if best_audio else {}
+
+    if best.get("acodec") not in (None, "none"):
+        return _single_payload(best, info)
+
+    best_audio = _best_audio(audio_only) or _best_audio(progressive)
+    if best_audio is None:
+        return _single_payload(best, info)
+    return {
+        "video_url": best.get("url"),
+        "video_headers": _headers_of(best),
+        "audio_url": best_audio.get("url"),
+        "audio_headers": _headers_of(best_audio),
+        "id": info.get("id"),
+        "title": info.get("title") or "",
+        "channel": info.get("channel") or info.get("uploader") or "",
+        "duration": info.get("duration"),
+        "thumbnail": info.get("thumbnail") or "",
     }
 
 
@@ -376,17 +491,12 @@ def resolve_video_dash(video_id, max_height=2160):
     def job():
         target = "https://www.youtube.com/watch?v=%s" % video_id
         h = max(240, int(max_height))
-        vfmt = "bestvideo[height<=%d][ext=mp4]/bestvideo[height<=%d]/best[height<=%d]" % (h, h, h)
-        afmt = "bestaudio[ext=m4a]/bestaudio/best"
-
         try:
-            info = _extract_streams(target, "%s+%s" % (vfmt, afmt))
-        except Exception:  # noqa: BLE001 - fall back to a single file below
-            info = None
-        payload = _dash_payload(info) if info is not None else {}
+            payload = _playback_payload(_extract_streams(target, "best"), h)
+        except Exception:  # noqa: BLE001 - fall through to a plain muxed stream
+            payload = {}
         if payload.get("video_url"):
             return payload
-        # Last resort: whatever single file we can get.
         return json.loads(_stream(target, _cap_format(h)))
 
     return _run(job)
@@ -400,18 +510,12 @@ def resolve_url(url, max_height=1080):
     def job():
         link = str(url or "").strip()
         h = max(240, int(max_height))
-        vfmt = "bestvideo[height<=%d][ext=mp4]/bestvideo[height<=%d]/best[height<=%d]" % (h, h, h)
-        afmt = "bestaudio[ext=m4a]/bestaudio/best"
-        for fmt in ("%s+%s" % (vfmt, afmt), _cap_format(h), "best", "18"):
-            try:
-                info = _extract_streams(link, fmt)
-            except Exception:  # noqa: BLE001 - try the next format
-                info = None
-            if info is None:
-                continue
-            payload = _dash_payload(info)
-            if payload.get("video_url"):
-                return payload
+        try:
+            payload = _playback_payload(_extract_streams(link, "best"), h)
+        except Exception:  # noqa: BLE001 - fall through to a plain muxed stream
+            payload = {}
+        if payload.get("video_url"):
+            return payload
         return json.loads(_stream(link, _cap_format(h)))
 
     return _run(job)
@@ -423,6 +527,10 @@ def fetch(url, max_height=1080):
     video track, and the distinct video heights on offer."""
 
     def job():
+        key = str(url)
+        hit = _FETCH_CACHE.get(key)
+        if hit is not None and time.time() - hit[0] < _FETCH_TTL:
+            return hit[1]
         try:
             info = _extract_streams(str(url), "best")
         except Exception as exc:  # noqa: BLE001
@@ -434,7 +542,7 @@ def fetch(url, max_height=1080):
             if height and f.get("vcodec") not in (None, "none"):
                 heights.add(int(height))
 
-        return {
+        result = {
             "url": info.get("webpage_url") or str(url),
             "title": info.get("title") or "",
             "uploader": info.get("uploader") or info.get("channel") or "",
@@ -445,6 +553,10 @@ def fetch(url, max_height=1080):
             ) or info.get("vcodec") not in (None, "none"),
             "heights": sorted(heights),
         }
+        _FETCH_CACHE[key] = [time.time(), result]
+        if len(_FETCH_CACHE) > 24:
+            _FETCH_CACHE.pop(next(iter(_FETCH_CACHE)))
+        return result
 
     return _run(job)
 

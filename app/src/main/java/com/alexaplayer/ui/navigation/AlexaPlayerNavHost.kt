@@ -197,12 +197,11 @@ fun AlexaPlayerNavHost(container: AppContainer, modifier: Modifier = Modifier) {
                     onLinkChange = vm::onLinkChange,
                     onFetch = vm::fetch,
                     onQuality = vm::setQuality,
-                    onPlay = {
-                        vm.play { videoUrl, audioUrl, title ->
-                            context.startActivity(
-                                VideoPlayerActivity.intent(context, videoUrl, audioUrl, title),
-                            )
-                        }
+                    onPlay = { onReady -> vm.play(onReady) },
+                    onFullscreen = { videoUrl, audioUrl, title ->
+                        context.startActivity(
+                            VideoPlayerActivity.intent(context, videoUrl, audioUrl, title),
+                        )
                     },
                     onDownloadVideo = { vm.download("video") },
                     onDownloadAudio = { vm.download("audio") },
