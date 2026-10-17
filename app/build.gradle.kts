@@ -165,6 +165,10 @@ dependencies {
 
     implementation(libs.androidx.datastore.preferences)
 
+    // Remuxes the separate video + audio tracks yt-dlp downloads into one mp4/mkv. The
+    // bare ("min") build is enough: copying streams needs no external codecs.
+    implementation("dev.ffmpegkit-maintained:ffmpeg-kit-min:8.1.7")
+
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
 

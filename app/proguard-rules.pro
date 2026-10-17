@@ -28,3 +28,7 @@
 
 # Keep our service entry point (referenced from the manifest only)
 -keep class com.alexaplayer.playback.PlaybackService { *; }
+
+# FFmpegKit loads its native bridge by name and reflects over session classes.
+-keep class com.arthenica.ffmpegkit.** { *; }
+-dontwarn com.arthenica.ffmpegkit.**

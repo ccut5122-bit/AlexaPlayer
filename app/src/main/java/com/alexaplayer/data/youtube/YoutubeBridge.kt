@@ -2,6 +2,9 @@ package com.alexaplayer.data.youtube
 
 import android.content.Context
 import android.os.Build
+import com.arthenica.ffmpegkit.FFmpegKit
+import com.arthenica.ffmpegkit.FFmpegKitConfig
+import com.arthenica.ffmpegkit.ReturnCode
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
 import com.alexaplayer.core.model.Song
@@ -108,6 +111,9 @@ class YoutubeBridge(context: Context) {
         Python.start(AndroidPlatform(appContext))
         python = Python.getInstance()
         module = python.getModule("ytmusic")
+        // Welds separate video+audio downloads back into one file. Failure here is not fatal:
+        // downloads still work, they just stay capped at the muxed ceiling.
+        runCatching { FFmpegKitConfig.init(appContext) }
     }
 
     suspend fun search(query: String, limit: Int = 25): SearchOutcome =
@@ -273,18 +279,7 @@ class YoutubeBridge(context: Context) {
         withContext(Dispatchers.IO) {
             tempDownloadDir.mkdirs()
             val payload = JSONObject(call("download", videoId, kind, token, tempDownloadDir.absolutePath, maxHeight))
-            val error = payload.optString("error")
-            if (error.isNotEmpty()) throw YoutubeException(error)
-
-            val temp = java.io.File(payload.optString("path"))
-            val title = payload.optString("title")
-            val ext = payload.optString("ext")
-            val published = publishToStorage(temp, title, ext)
-            DownloadResult(
-                path = published.absolutePath,
-                title = title,
-                ext = ext,
-            )
+            finishDownload(payload)
         }
 
     /** Downloads an arbitrary pasted link (YouTube, Instagram, ...) and publishes it. */
@@ -292,19 +287,59 @@ class YoutubeBridge(context: Context) {
         withContext(Dispatchers.IO) {
             tempDownloadDir.mkdirs()
             val payload = JSONObject(call("download_url", url, kind, token, tempDownloadDir.absolutePath, maxHeight))
-            val error = payload.optString("error")
-            if (error.isNotEmpty()) throw YoutubeException(error)
-
-            val temp = java.io.File(payload.optString("path"))
-            val title = payload.optString("title")
-            val ext = payload.optString("ext")
-            val published = publishToStorage(temp, title, ext)
-            DownloadResult(
-                path = published.absolutePath,
-                title = title,
-                ext = ext,
-            )
+            finishDownload(payload)
         }
+
+    /**
+     * Turns a python download payload into a published file. yt-dlp hands back a separate
+     * video+audio pair for anything above the muxed ceiling, so those get welded together
+     * with ffmpeg before publication; everything else is already a single file.
+     */
+    private fun finishDownload(payload: JSONObject): DownloadResult {
+        val error = payload.optString("error")
+        if (error.isNotEmpty()) throw YoutubeException(error)
+
+        val title = payload.optString("title")
+        val declaredExt = payload.optString("ext")
+        val file = if (payload.optBoolean("merge")) {
+            val video = java.io.File(payload.optString("video_path"))
+            val audio = java.io.File(payload.optString("audio_path"))
+            mergeAv(video, audio, title)
+        } else {
+            java.io.File(payload.optString("path"))
+        }
+        if (!file.exists() || file.length() <= 0L) throw YoutubeException("Download produced no file")
+
+        val ext = file.extension.ifBlank { declaredExt }
+        val published = publishToStorage(file, title, ext)
+        return DownloadResult(path = published.absolutePath, title = title, ext = ext)
+    }
+
+    /**
+     * Remuxes a video-only file and an audio-only file into one playable file without
+     * re-encoding. MP4 first (widest gallery support); Matroska as a fallback for tracks
+     * MP4 refuses, e.g. Opus audio. On any failure the untouched video file is returned so
+     * the download still succeeds.
+     */
+    private fun mergeAv(video: java.io.File, audio: java.io.File, title: String): java.io.File {
+        if (!video.exists() || !audio.exists() || video.absolutePath == audio.absolutePath) return video
+        val base = safeName(title).ifBlank { "video" }
+        val dir = video.parentFile ?: tempDownloadDir
+        val mp4 = java.io.File(dir, "$base-merged.mp4")
+        if (runFfmpegMerge(video, audio, mp4)) return mp4
+        val mkv = java.io.File(dir, "$base-merged.mkv")
+        if (runFfmpegMerge(video, audio, mkv)) return mkv
+        return video
+    }
+
+    private fun runFfmpegMerge(video: java.io.File, audio: java.io.File, out: java.io.File): Boolean =
+        runCatching {
+            out.delete()
+            val command = "-y -i \"${video.absolutePath}\" -i \"${audio.absolutePath}\"" +
+                " -map 0:v:0 -map 1:a:0 -c copy \"${out.absolutePath}\""
+            val session = FFmpegKit.execute(command)
+            ReturnCode.isSuccess(session.returnCode) && out.exists() && out.length() > 0L
+        }.getOrDefault(false)
 
     /**
      * Puts a finished download where the user can find it: MediaStore Downloads on API 29+

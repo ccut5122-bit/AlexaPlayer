@@ -479,6 +479,32 @@ def _is_instagram(url):
     return "instagram.com" in str(url).lower()
 
 
+def _split_downloaded(info):
+    """(video_path, audio_path) for a finished yt-dlp extraction; either may be None.
+
+    When yt-dlp downloaded a separate video+audio pair there is no ffmpeg on the device to
+    merge them, so it leaves two files behind. Kotlin merges those with FFmpegKit."""
+    downloads = info.get("requested_downloads") or []
+    formats = info.get("requested_formats") or []
+    video_path = None
+    audio_path = None
+    if downloads and formats and len(downloads) >= len(formats):
+        for fmt, entry in zip(formats, downloads):
+            path = entry.get("filepath")
+            if not path or not os.path.exists(path):
+                continue
+            if fmt.get("vcodec") not in (None, "none") and video_path is None:
+                video_path = path
+            elif fmt.get("acodec") not in (None, "none") and audio_path is None:
+                audio_path = path
+    if video_path is None and audio_path is None:
+        first = next((e.get("filepath") for e in downloads if e.get("filepath")), None)
+        first = first or info.get("filepath")
+        if first and os.path.exists(first):
+            video_path = first
+    return video_path, audio_path
+
+
 def download_url(url, kind, token, outdir, max_height=1080):
     """Download any supported link (YouTube, Instagram, ...) into outdir.
 
@@ -497,7 +523,13 @@ def download_url(url, kind, token, outdir, max_height=1080):
         if kind == "audio":
             formats = ("bestaudio/best", "bestaudio", "best")
         else:
+            # Prefer a separate video+audio pair so resolutions above the 720p muxed
+            # ceiling survive; without ffmpeg yt-dlp leaves both files behind and the
+            # Kotlin side merges them. Single-file formats are the fallback for sites that
+            # only ever serve one muxed track (Instagram).
             formats = (
+                "bestvideo[height<=%d][ext=mp4]+bestaudio[ext=m4a]" % cap,
+                "bestvideo[height<=%d]+bestaudio" % cap,
                 "best[height<=%d][ext=mp4]" % cap,
                 "best[height<=%d]" % cap,
                 "best[ext=mp4]",
@@ -537,8 +569,18 @@ def download_url(url, kind, token, outdir, max_height=1080):
                     return image
             raise RuntimeError("Download failed (%s)" % (last_error or "unknown"))
 
-        requested = info.get("requested_downloads") or []
-        path = requested[0].get("filepath") if requested else info.get("filepath")
+        video_path, audio_path = _split_downloaded(info)
+        if video_path and audio_path and video_path != audio_path:
+            _PROGRESS[str(token)] = {"status": "finished", "path": video_path}
+            return {
+                "merge": True,
+                "video_path": video_path,
+                "audio_path": audio_path,
+                "title": info.get("title") or "",
+                "ext": "mp4",
+            }
+
+        path = video_path or audio_path or info.get("filepath")
         if not path or not os.path.exists(path):
             raise RuntimeError("Download produced no file")
 
@@ -583,74 +625,15 @@ def download_progress(token):
 
 
 def download(video_id, kind, token, outdir, max_height=720):
-    """Download a song (kind=audio) or a video (kind=video) into outdir, reporting
-    byte-level progress on _PROGRESS. The calling (Kotlin) side moves the result into
-    public storage afterwards.
-
-    Video uses single-file mp4 formats only, because there is no ffmpeg on the device to
-    merge separate video+audio tracks; it falls back across the whole client ladder."""
-
-    def job():
-        import yt_dlp
-
-        if kind == "video":
-            cap = int(max_height)
-            formats = (
-                "best[height<=%d][ext=mp4]" % cap,
-                "best[ext=mp4]",
-                "18",
-                "best",
-            )
-        else:
-            formats = ("bestaudio/best", "bestaudio", "best")
-
-        url = "https://www.youtube.com/watch?v=%s" % video_id
-        info = None
-        last_error = None
-        for fmt in formats:
-            for client in _CLIENTS:
-                opts = _apply_client(
-                    dict(
-                        _device_opts(fmt),
-                        skip_download=False,
-                        outtmpl=os.path.join(str(outdir), "%(title).120s-%(id)s.%(ext)s"),
-                        progress_hooks=[_progress_hook(str(token))],
-                    ),
-                    client,
-                )
-                try:
-                    with yt_dlp.YoutubeDL(opts) as ydl:
-                        info = ydl.extract_info(url, download=True)
-                except Exception as exc:  # noqa: BLE001 - try the next client/format
-                    _PROGRESS[str(token)] = {"status": "error", "error": str(exc)}
-                    last_error = exc
-                    info = None
-                    continue
-                break
-            if info is not None:
-                break
-
-        if info is None:
-            raise RuntimeError("Download failed (%s)" % (last_error or "unknown"))
-
-        requested = info.get("requested_downloads") or []
-        path = requested[0].get("filepath") if requested else None
-        if not path or not os.path.exists(path):
-            _PROGRESS[str(token)] = {"status": "error", "error": "Download produced no file"}
-            raise RuntimeError("Download produced no file")
-
-        _PROGRESS[str(token)] = {
-            "status": "finished",
-            "path": path,
-            "title": info.get("title") or "",
-        }
-        return {
-            "path": path,
-            "title": info.get("title") or "",
-            "ext": os.path.splitext(path)[1].lstrip(".") or "m4a",
-        }
-
-    return _run(job)
+    """Download a YouTube song/video by id. Delegates to download_url so the song/video
+    paths share one client ladder and the same ffmpeg merge hand-off for high resolutions."""
+    return download_url(
+        "https://www.youtube.com/watch?v=%s" % video_id,
+        kind,
+        token,
+        outdir,
+        max_height,
+    )
 
 
 def _progress_hook(token):
