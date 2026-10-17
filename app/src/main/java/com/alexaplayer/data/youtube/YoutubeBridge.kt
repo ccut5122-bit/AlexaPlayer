@@ -3,7 +3,6 @@ package com.alexaplayer.data.youtube
 import android.content.Context
 import android.os.Build
 import com.arthenica.ffmpegkit.FFmpegKit
-import com.arthenica.ffmpegkit.FFmpegKitConfig
 import com.arthenica.ffmpegkit.ReturnCode
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
@@ -111,9 +110,6 @@ class YoutubeBridge(context: Context) {
         Python.start(AndroidPlatform(appContext))
         python = Python.getInstance()
         module = python.getModule("ytmusic")
-        // Welds separate video+audio downloads back into one file. Failure here is not fatal:
-        // downloads still work, they just stay capped at the muxed ceiling.
-        runCatching { FFmpegKitConfig.init(appContext) }
     }
 
     suspend fun search(query: String, limit: Int = 25): SearchOutcome =
