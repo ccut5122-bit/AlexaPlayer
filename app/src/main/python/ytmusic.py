@@ -42,22 +42,21 @@ _OPTS = {
     "format": "bestaudio/best",
 }
 
-# Player clients are only pinned as a *fallback*. The default set yt-dlp picks for the
-# running environment (JS-less here, so it leans on Android/iOS clients that do not need a
-# PO Token) is always tried first - forcing a client that now requires a PO Token, or one
-# that yt-dlp has since removed, is exactly what turns "Every song fails" into "Requested
-# format is not available". These names are validated by yt-dlp itself, so an unknown one
-# merely wastes a single attempt instead of breaking the loop.
+# Player clients are tried in order until one yields a URL that actually serves bytes.
+# yt-dlp's "success" only means it parsed a URL - clients that now need a PO Token (or that
+# YouTube has since changed) hand back links that answer 403, which is why the ladder alone
+# is not enough: _probe() validates every candidate and the loop keeps walking. These names
+# are validated by yt-dlp itself, so an unknown one merely wastes a single attempt.
 _CLIENTS = [
-    "default",
-    "tv",
-    "android_vr",
-    "ios",
-    "ios_downgraded",
-    "mweb",
-    "tv_simply",
-    "web_safari",
     "android",
+    "ios",
+    "default",
+    "android_vr",
+    "ios_downgraded",
+    "tv",
+    "tv_simply",
+    "mweb",
+    "web_safari",
     "web",
 ]
 
@@ -111,6 +110,41 @@ def _run(func):
         return json.dumps(func())
     except Exception as exc:  # noqa: BLE001 - bridge wants the message, not a traceback
         return json.dumps({"error": str(exc) or type(exc).__name__})
+
+
+def _probe(url, headers=None):
+    """Cheap Range request that confirms a resolved URL actually serves bytes.
+
+    YouTube signs every media URL for the exact client that produced it, and clients that
+    now require a PO Token (or whose signature has gone stale) hand back a URL that answers
+    403 the moment Media3 fetches it. Extracting a URL is therefore not enough - without
+    this check the client ladder stops on the first client that *looks* successful and
+    playback then dies with "This video is unavailable", which the player hides by skipping
+    to the next item. Probing here is what turns that into "try the next client"."""
+    if not url or not str(url).startswith(("http://", "https://")):
+        return False
+    import urllib.request
+
+    request = urllib.request.Request(str(url), headers=dict(headers or {}), method="GET")
+    request.add_header("Range", "bytes=0-1")
+    try:
+        with urllib.request.urlopen(request, timeout=8) as response:
+            return 200 <= int(response.status) < 300
+    except Exception:  # noqa: BLE001 - any failure means "this candidate is dead"
+        return False
+
+
+def _payload_playable(payload):
+    """True when every URL a payload would hand to Media3 actually serves bytes."""
+    if not payload:
+        return False
+    video = payload.get("video_url")
+    if not video or not _probe(video, payload.get("video_headers")):
+        return False
+    audio = payload.get("audio_url")
+    if audio and not _probe(audio, payload.get("audio_headers")):
+        return False
+    return True
 
 
 def _pick_audio(info):
@@ -432,7 +466,7 @@ def _stream(target, base_format):
                     last_error = exc
                     continue
                 found_url, found_headers = _pick_audio(candidate)
-                if found_url:
+                if found_url and _probe(found_url, found_headers):
                     info, url, headers = candidate, found_url, found_headers
                     break
             if url:
@@ -492,7 +526,7 @@ def resolve_video_dash(video_id, max_height=2160):
         target = "https://www.youtube.com/watch?v=%s" % video_id
         h = max(240, int(max_height))
         try:
-            payload = _playback_payload(_extract_streams(target, "best"), h)
+            payload = _playback_payload(_extract_streams(target, "best", validate_height=h), h)
         except Exception:  # noqa: BLE001 - fall through to a plain muxed stream
             payload = {}
         if payload.get("video_url"):
@@ -511,7 +545,7 @@ def resolve_url(url, max_height=1080):
         link = str(url or "").strip()
         h = max(240, int(max_height))
         try:
-            payload = _playback_payload(_extract_streams(link, "best"), h)
+            payload = _playback_payload(_extract_streams(link, "best", validate_height=h), h)
         except Exception:  # noqa: BLE001 - fall through to a plain muxed stream
             payload = {}
         if payload.get("video_url"):
@@ -561,8 +595,11 @@ def fetch(url, max_height=1080):
     return _run(job)
 
 
-def _extract_streams(url, base_format):
-    """Extract and split video/audio for any URL using the default client first."""
+def _extract_streams(url, base_format, validate_height=None):
+    """Extract and split video/audio for any URL, walking the client ladder until one
+    yields streams that are actually playable. When [validate_height] is set, every
+    candidate is probed through the exact payload [_playback_payload] would build, so a
+    client that only produces 403 links is skipped instead of stopping the search."""
     import yt_dlp
 
     info = None
@@ -571,12 +608,20 @@ def _extract_streams(url, base_format):
     for client in _CLIENTS:
         try:
             with yt_dlp.YoutubeDL(_apply_client(opts, client)) as ydl:
-                info = ydl.extract_info(str(url), download=False)
-            break
+                candidate = ydl.extract_info(str(url), download=False)
         except Exception as exc:  # noqa: BLE001 - try the next client
-            info = None
             last_error = exc
             continue
+        if candidate is None:
+            continue
+        entries = [e for e in (candidate.get("entries") or []) if e]
+        candidate = entries[0] if entries else candidate
+        if validate_height is None or _payload_playable(
+            _playback_payload(candidate, validate_height)
+        ):
+            info = candidate
+            break
+
     if info is None:
         raise RuntimeError(str(last_error) or "Extraction failed")
 
